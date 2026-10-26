@@ -182,14 +182,20 @@ async function main() {
     console.log('  js errors: ' + (errors.length ? '\n    ' + errors.slice(0, 8).join('\n    ') : 'none'));
   };
 
-  await run('CPU vs CPU, both Medium (a full decisive game)', '#fast', [
-    [700, null], [1600, null], [2500, 'cvc-end.png'], [3300, null], [4100, 'cvc-late.png'], [5200, null]
+  await run('CPU vs CPU, both Medium (0.5 s each - a game played out to a decision)', '#fast', [
+    [1500, null], [4000, null], [8000, 'cvc-end.png'], [13000, 'cvc-late.png'], [19000, null]
+  ]);
+  await run('CPU vs CPU, Easy vs Easy (the shortest clock: 0.1 s, 3 plies, one core)', '#easy', [
+    [2500, 'easy-1.png'], [6000, 'easy-late.png'], [11000, null]
   ]);
   await run('Look-ahead pinned to 12 plies (the reported case: deep thinking must not collapse)', '#d12', [
     [2000, null], [9000, 'deep-1.png'], [21000, 'deep-late.png'], [46000, 'deep-move24.png']
   ]);
-  await run('CPU vs CPU, Expert vs Expert (the longest clock, every spare core)', '#expert', [
-    [5000, null], [11000, 'expert-1.png'], [20000, 'expert-late.png']
+  await run('CPU vs CPU, Expert vs Expert (3 s, capped at 10 plies, 4 cores)', '#expert', [
+    [5000, null], [9000, 'expert-1.png'], [15000, 'expert-late.png']
+  ]);
+  await run('CPU vs CPU, Master vs Master (the longest clock: 10 s, 16 plies, every core but one)', '#master', [
+    [12000, 'master-1.png'], [26000, null], [42000, 'master-late.png']
   ]);
   await run('CPU vs CPU, Hard vs Medium (rich report, worker search)', '#hard', [
     [1500, null], [4000, 'hard-1.png'], [8000, 'hard-3.png']

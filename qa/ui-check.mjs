@@ -1,8 +1,11 @@
-// Sidebar check (needs the QA Chrome on :9333, like cdp-drive.mjs). It measures what a
+// Layout check (needs the QA Chrome on :9333, like cdp-drive.mjs). It measures what a
 // screenshot alone should not be trusted for: where the Engine report sits on the first
 // screen, the computed colour of the decision text and of the log lines, what the decision
 // log actually holds, and that the advanced settings are folded by default while the summary
-// line still states what is pinned. It also photographs the log and the opened panel.
+// line still states what is pinned. It also measures the log's place in the page rather than
+// trusting the markup - that it starts immediately under the board, in that column's width,
+// laid out as one row per decision with no text spilling out of the card. It photographs the
+// log and the opened panel.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -47,13 +50,28 @@ const fileUrl = (p, hash) => 'file:///' + path.join(ROOT, p).replace(/\\/g, '/')
 await send('Page.enable');
 await send('Runtime.enable');
 
+/* Navigating to the same URL twice is not a reload, and the previous run leaves the page
+   scrolled and its settings panel open - both of which would be measured as if they were the
+   product's own behaviour. So leave the document first. */
+await send('Page.navigate', { url: 'about:blank' });
+await sleep(400);
 await send('Page.navigate', { url: fileUrl('qa/probe.html', '#fast') });
 await sleep(16000);
 
-console.log('where things sit on the first screen: ' + await evaluate(
+console.log('where things sit: ' + await evaluate(
   "(function(){var g=function(id){var r=document.getElementById(id).getBoundingClientRect();" +
-  "return {top:Math.round(r.top),bottom:Math.round(r.bottom),visible:Math.round(r.bottom)<window.innerHeight};};" +
-  "return JSON.stringify({viewport:[window.innerWidth,window.innerHeight],reportRow:g('stBy'),logHeading:g('logList'),docHeight:document.documentElement.scrollHeight});})()"));
+  "return {top:Math.round(r.top),bottom:Math.round(r.bottom),left:Math.round(r.left),width:Math.round(r.width)," +
+  "visibleOnFirstScreen:Math.round(r.bottom)<window.innerHeight};};" +
+  "var b=g('boardCard');var l=document.getElementById('logList').closest('.card').getBoundingClientRect();" +
+  "l={top:Math.round(l.top),bottom:Math.round(l.bottom),left:Math.round(l.left),width:Math.round(l.width)};" +
+  "var m=document.querySelector('#logList .msg');" +
+  "var spill=0, rows=0;" +
+  "document.querySelectorAll('#logList .msg').forEach(function(e){ if(e.scrollWidth>e.clientWidth+1) spill++; rows++; });" +
+  "return JSON.stringify({viewport:[window.innerWidth,window.innerHeight],reportRow:g('stBy'),board:b," +
+  "logCard:l,underTheBoard:l.top>=b.bottom,immediatelyUnderBoard:l.top-b.bottom<=30,gapUnderBoard:l.top-b.bottom," +
+  "sameColumnAsBoard:l.left===b.left&&l.width===b.width," +
+  "rowColumns:m?getComputedStyle(m).gridTemplateColumns:'no rows',rowsSpillingOut:spill,rows:rows," +
+  "settings:g('settingsCard'),docHeight:document.documentElement.scrollHeight});})()"));
 
 console.log('the log as it stands: ' + await evaluate(
   "(function(){var l=document.getElementById('logList');var k=l.querySelectorAll('.msg');" +
@@ -65,12 +83,11 @@ console.log('the log as it stands: ' + await evaluate(
 
 console.log('settings panel before opening: ' + await evaluate(
   "(function(){var d=document.getElementById('settingsCard');var r=d.getBoundingClientRect();" +
-  "var c=document.querySelector('#logList').getBoundingClientRect();" +
   "return JSON.stringify({open:d.open,cardTop:Math.round(r.top),cardBottom:Math.round(r.bottom)," +
-  "summaryText:document.querySelector('#settingsCard summary').textContent.replace(/\\s+/g,' ').slice(0,190)," +
-  "logBottomAboveSettings:Math.round(c.bottom)<Math.round(r.top)});})()"));
+  "summaryText:document.querySelector('#settingsCard summary').textContent.replace(/\\s+/g,' ').slice(0,190)});})()"));
 
-await evaluate("window.scrollTo(0, document.documentElement.scrollHeight); 'ok'");
+// photograph the log where it now lives: under the board, in the board's own column
+await evaluate("document.getElementById('logList').closest('.card').scrollIntoView({ block: 'start' }); 'ok'");
 await sleep(500);
 await shot('log-look.png');
 

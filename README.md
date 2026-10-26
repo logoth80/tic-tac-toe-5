@@ -11,40 +11,49 @@ a browser.
 | --- | --- |
 | Mode | 2 Players / 1P vs CPU / CPU vs CPU |
 | Board | 9×9 up to 40×40; 25×25 is the default |
-| CPU strength / Engine X + Engine O | Easy, Medium, Hard, Expert. In "1P vs CPU" there is one strength control and it applies to the CPU on either side; in "CPU vs CPU" each side has its own |
+| CPU strength / Engine X + Engine O | Easy, Medium, Hard, Expert, Master. In "1P vs CPU" there is one strength control and it applies to the CPU on either side; in "CPU vs CPU" each side has its own |
 | Look ahead · Move width · Time per move | these three live in **Search settings — advanced**, folded by default and placed last. Pinning any of them overrides what the level menu promises; the summary line of the collapsed panel states what is pinned |
 | Engine report | what the last search actually did — which engine made it (written in that player's colour), how deep it got, positions looked at, the time, how many workers answered, why it stopped, and the distance to a five when the outcome is proven |
-| Decision log | every engine decision, and every move you make, in the order they happened and in the colours of the stones, so an answer is still readable after the opponent has moved. Undo takes the lines back together with the moves |
+| Decision log | under the board, as wide as it is: every engine decision, and every move you make, in the order they happened and in the colours of the stones, so an answer is still readable after the opponent has moved. Undo takes the lines back together with the moves |
 
 ## Strength is a clock
 
-A level says how long the CPU may think, and nothing else except — below the top
-level — how deep it is allowed to spend that time:
+A level says how long the CPU may think, and how deep it is allowed to spend that
+time — both stated in the menu label itself:
 
 | Level | Clock per move | Depth ceiling | Cores used |
 | --- | --- | --- | --- |
-| Easy | 0.5 s | 4 plies | 1 |
-| Medium | 1.5 s | 6 plies | 2 |
-| Hard | 3 s | 10 plies | 4 |
-| Expert | 6 s | none in practice (16) | every core but one, up to 8 |
+| Easy | 0.1 s | 3 plies | 1 |
+| Medium | 0.5 s | 5 plies | 2 |
+| Hard | 1.5 s | 6 plies | 4 |
+| Expert | 3 s | 10 plies | 4 |
+| Master | 10 s | 16 plies | every core but one, up to 16 workers |
 
 The move width is the widest available at every level: strength is time and
 depth, never a hidden narrowing of which moves get considered. The ceilings exist
-so that Easy still reasons four moves ahead on a fast machine instead of turning
-into "Hard, but slow". The strength menu spells all of this out in its own
-labels, and the report repeats what actually happened. Everything that overrides
-a level — a pinned look-ahead, a pinned width, a longer clock — sits in one
-**Search settings — advanced** panel that is folded by default and placed last;
-the one line that stays visible states what is currently pinned.
+so that Easy still reasons three moves ahead on a fast machine instead of turning
+into "Hard, but slow", and Master's exists only so that one search cannot run away
+with the page. Measured on this machine (one core, Node, a quiet 25×25 midgame),
+the clock is a maximum and not a target: Easy finishes its 3 plies in 2 ms, Medium
+its 5 in 153 ms, Hard its 6 in 643 ms — below Expert the level is decided by its
+ceiling, and only Expert and Master actually spend the clock they are given
+(10 s on one core reaches depth 8, 3.1 M nodes). The strength menu spells all of
+this out in its own labels, and the report repeats what actually happened.
+Everything that overrides a level — a pinned look-ahead, a pinned width, a longer
+clock — sits in one **Search settings — advanced** panel that is folded by default
+and placed last; the one line that stays visible states what is currently pinned.
 
 Time is spent across cores where the level asks for it: the root squares are
 dealt round-robin to a pool of Web Workers, each worker searches its own first
-moves **to the same depth**, and the parts are merged. A depth only counts when
-every part finished it, so the depth in the report is the depth the whole root
-reached — never one worker's best. Threads follow the clock, so a clock slid
-above the level's own gets the cores the longer level would use. `SharedArrayBuffer`
-is unavailable on a `file://` page, so the workers share no transposition table;
-that duplication costs some efficiency and the extra cores pay for it in plies.
+moves **to the same depth**, and the parts are merged. The pool is as large as the
+level asks for and as the root can feed — at least two squares per worker, so a
+root of twenty squares in a long clock gets ten workers rather than none. A depth
+only counts when every part finished it, so the depth in the report is the depth
+the whole root reached — never one worker's best. Threads follow the clock, so a
+clock slid above the level's own gets the cores the longer level would use.
+`SharedArrayBuffer` is unavailable on a `file://` page, so the workers share no
+transposition table; that duplication costs some efficiency and the extra cores
+pay for it in plies.
 
 The engine runs in Web Workers built from the serialised engine function, so the
 board never blocks (one worker for short answers and for the one-core levels; the
@@ -54,10 +63,11 @@ Two surfaces say what a search did. The **Engine report** shows the most recent
 one in detail and names the engine that made it, written in that player's colour
 — orange for X, cyan for O. There is deliberately no third colour for "the
 decision": a third hue would compete with the two the stones already use, and the
-colour is the identity of who decided. The **Decision log** keeps every decision
-as a line of the game — the square chosen, how deep the search actually saw, what
-it cost, how many workers it took, and why — so "why did it play there" is still
-answerable after the opponent has moved, and a game between two engines reads as
+colour is the identity of who decided. The **Decision log** sits under the board,
+as wide as it is, and keeps every decision as a line of the game — who decided,
+the square chosen, how deep the search actually saw, what it cost, how many
+workers it took, and why — so "why did it play there" is still answerable after
+the opponent has moved, and a game between two engines reads as
 a conversation. Both surfaces are built from the same composed strings, so they
 cannot disagree about what happened. Why a search stopped is stated as it
 happened (`clock ran out
@@ -101,6 +111,8 @@ node tests/bench-depth.mjs                        # branch-factor / budget sweep
 node tests/diag-pace.mjs hard hard 25 44 12       # per-move trace: depth, nodes, ms, why each move stopped
 node tests/diag-lost.mjs                          # one position known lost in 3: does every depth prove it?
 node tests/ladder-sample.mjs 8 13 hard:medium,hard:easy   # strength measured over N games, no pass/fail bars
+node tests/diag-tt.mjs                            # what one worker's transposition table costs: entries stored at a real clock, measured bytes per entry, the pool's worst case (--expose-gc gives a clean byte figure)
+node tests/pool-compare.mjs 15 8 master           # A/B of two pool sizes on the *same* position in the real page, read from the game's own decision log; needs QA Chrome on 9333
 ```
 
 ## Browser QA
@@ -125,8 +137,9 @@ $out = (Get-Content match5.html -Raw -Encoding UTF8).Replace('</body>',
 node qa/cdp-drive.mjs
 ```
 
-`qa/probe.js` accepts hash cases in the URL (`#fast`, `#expert`, `#hard`, `#pvp`,
-`#d0`, `#d12`) to pin mode, level and look-ahead. Its status strip carries the
+`qa/probe.js` accepts hash cases in the URL (`#fast`, `#easy`, `#hard`, `#expert`,
+`#master`, `#pvp`, `#d0`, `#d12`) to pin mode, level and look-ahead. Its status
+strip carries the
 engine report's own fields — depth, nodes, the search-workers row, the decision
 text — and the things a screenshot should not be asked to prove by eye: the
 **computed colour** of the decision text and of the "searched by" row (`DECCOL`,
@@ -138,25 +151,59 @@ drawn in one of the two stone colours rather than a third colour, and that the
 advanced panel stays closed while still naming what was pinned.
 `qa/cdp-profile/`, `qa/*.png` and `qa/probe.html` are generated and ignored.
 
-The sidebar is checked separately (`node qa/ui-check.mjs`), because a report that tells the
+The layout is checked separately (`node qa/ui-check.mjs`), because a report that tells the
 truth is not enough — it has to stay reachable and readable while the game moves on. It
 prints where the Engine report sits relative to the first screen, the computed colour of the
 decision text, the decision log's line count and colour histogram plus its oldest and newest
 line, and the state of the folded advanced panel together with the summary line that stays
-visible when it is closed. It writes `qa/log-look.png` and `qa/settings-open.png` for the eye.
+visible when it is closed. It also measures the log's position in the page rather than
+trusting the markup: that it starts below the board and shares that column's left edge and
+width, that its rows are laid out as one row per decision, and that no row's text spills out
+of the card. It writes `qa/log-look.png` and `qa/settings-open.png` for the eye.
 
-### What the pool was measured to do (the machine used for development)
+### What the pool was measured to do (the machine used for development: 16 logical cores)
 
-Both figures are the page's own report row, printed by the pass above — not a
+Every figure is the page's own report row, printed by the pass above — not a
 benchmark harness, and they move with machine load.
 
 | Case | Reported |
 | --- | --- |
-| Expert vs Expert, 6 s clock | 8 workers · root split, 8 ply reached in 6.0 s, 2.1 M nodes |
-| Look-ahead pinned to 12, clock pinned to 2.5 s | 2 workers, 7–9 ply, 0.7–1.0 M nodes per move, 245–399k nodes/s |
-| The same engine on one core (Node suite, its own midgame fixture) | ~200–240k nodes/s |
-| A Hint in a Hard position (3 s clock) | 4 workers · root split, 7 ply, 1,127,067 nodes in 3,006 ms |
-| Look-ahead pinned to 0; or a settled tactic ("completes five now") | `1 · one core` — correct, there is nothing to split |
+| Master vs Master, 10 s clock | 15 workers · root split, 9 ply reached in 9.5 s, 15,415,513 positions, 1.62 M positions/s |
+| An earlier move of the same game, where the root held 25 squares | 12 workers, not 15 — the pool was shrunk to what the root can feed |
+| Expert vs Expert, 3 s clock | 4 workers · root split, 7–8 ply, 1.7–1.9 M positions per move, 0.56–0.67 M/s |
+| Look-ahead pinned to 12, clock pinned to 2.5 s | 4 workers (that clock is the Hard level's), 6–7 ply, 0.6–1.4 M positions per move |
+| Medium, 0.5 s clock | 5 ply — its ceiling — in 21–204 ms per move, 4–21k positions, 2 workers |
+| Easy, 0.1 s clock | 3 ply — its ceiling — one core on every one of 38 moves |
+| The same engine on one core (Node suite, its own midgame fixture) | ~200–330k positions/s |
+| A Hint asked in a Hard position | 4 workers · root split, 6 ply (its ceiling), 51,030 positions in 140 ms |
+| Look-ahead pinned to 0; or a settled tactic ("completes five now", "must block the five") | `1 · one core` — correct, there is nothing to split |
+
+What the numbers say about cores, first as rates: per worker the rate falls as the
+pool grows — ~250–330k positions/s alone, ~150k each with four, ~108k each with
+fifteen, on hyper-threaded cores. The aggregate still rises (0.33 M → 0.61 M →
+1.62 M positions/s), so the pool is not wasted work; it is just not linear.
+
+Whether that aggregate turns into strength was measured rather than assumed, on the
+same position (`node tests/pool-compare.mjs 15 8 master`: it rewinds the game so
+that both arms are asked to think about an identical position, and reads the answer
+out of the game's own decision log):
+
+| Position | Pool asked for | Pool used | Plies reached | Positions searched |
+| --- | --- | --- | --- | --- |
+| A | 15 | 15 | 8 / 16 | 10,651,441 in 10.0 s |
+| A | 8 | 7 | 8 / 16 | 3,039,149 in 6.3 s |
+| B | 15 | 7 | 8 / 16 | 8,022,656 in 10.0 s |
+| B | 8 | 7 | 8 / 16 | 6,741,873 in 10.0 s |
+
+Two honest readings of that. Nearly twice the workers searched several times the
+positions (the 8-worker arm did not even use its whole clock) and reached **the
+same depth**: with a branching factor of ten to twenty, one extra ply costs roughly
+an order of magnitude more positions, so doubling cores buys a fraction of a ply.
+And on both positions the pool was capped *below* what the level asked for, because
+the root is split only where each worker gets at least two squares — those roots fed
+seven to fifteen. So Master's "every core but one" is headroom rather than a
+measured gain in strength: it is honoured when a position can use it, it never
+breaks anything, and the report says how many workers it actually used.
 
 The node counts vary with the position and with what the previous moves left in the
 transposition tables; the plies and the worker counts are what the level promises.
@@ -167,3 +214,12 @@ transposition table between workers, so the pool is deliberately below linear
 efficiency — it buys work, not a magic factor. What is *not* a guess is the
 correctness claim behind it: engine-test section [11] asserts that the merged
 answer is the same square, value and proof a single search would have returned.
+
+The unshared tables are also the one place where "every core but one" could have
+cost the page memory, so it was measured rather than assumed
+(`node --expose-gc tests/diag-tt.mjs`): one entry costs ~141 bytes, the engine
+drops a worker's table above 300,000 entries, so a worker peaks at ~40 MB of
+table and a pool of fifteen at ~600 MB in the worst case. In practice it is far
+below that — a full 10-second single-core search visited 3.1 M positions and kept
+14,977 entries, because once a pass is cut off mid-way almost nothing gets
+stored. The bound is what makes the top level's core count safe to grant.

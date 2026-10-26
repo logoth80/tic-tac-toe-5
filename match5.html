@@ -35,6 +35,10 @@
   header.top p { margin: 0; color: var(--dim); font-size: 13px; }
 
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 336px; gap: 18px; align-items: start; }
+  /* The board and its decision log are one column, so the log starts immediately under the
+     board even when the sidebar beside them is taller than the board. */
+  #playCol { display: grid; gap: 18px; min-width: 0; }
+  #playCol > .card + .card { margin-top: 0; }
   @media (max-width: 980px) { .layout { grid-template-columns: minmax(0, 1fr); } }
 
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
@@ -125,15 +129,24 @@
   .cands td.sc { text-align: right; }
 
   /* ---------- decision log ----------
-     Each search the engines make stays in the sidebar as a line of the game, so a
-     decision is not erased when the other side moves. Same colours as the stones. */
-  .log { display: flex; flex-direction: column; gap: 7px; max-height: 340px; overflow-y: auto; }
-  .log .msg { border-left: 3px solid var(--line2); border-radius: 8px; background: rgba(255,255,255,.022); padding: 6px 9px 7px; }
-  .log .msg .who { display: flex; gap: 6px; align-items: baseline; font: 700 10px/1.35 var(--sans);
+     Every search the engines make stays as a line of the game, under the board it describes, so
+     a decision is not erased when the other side moves. Same colours as the stones.
+     The card is as wide as the board, so a decision is one row: who decided, the square, then
+     what it cost and why. Below the sidebar breakpoint the three parts stack. */
+  .log { display: flex; flex-direction: column; gap: 6px; max-height: 380px; overflow-y: auto; }
+  .log .msg { display: grid; grid-template-columns: 172px 64px minmax(0, 1fr); gap: 3px 12px;
+    align-items: baseline; border-left: 3px solid var(--line2); border-radius: 8px;
+    background: rgba(255,255,255,.022); padding: 7px 11px 8px; }
+  .log .msg .who { display: flex; gap: 6px; align-items: baseline; font: 700 10px/1.5 var(--sans);
     letter-spacing: .1em; text-transform: uppercase; color: var(--dim2); }
-  .log .msg .who i { font: 600 10px/1.35 var(--mono); letter-spacing: 0; font-style: normal; color: var(--dim2); }
-  .log .msg .mv { margin-top: 3px; font: 700 12.5px/1.35 var(--mono); color: var(--ink); }
-  .log .msg .det { font: 400 11px/1.45 var(--mono); color: var(--dim2); }
+  .log .msg .who i { font: 600 10px/1.5 var(--mono); letter-spacing: 0; font-style: normal; color: var(--dim2); }
+  .log .msg .mv { font: 700 13px/1.5 var(--mono); color: var(--ink); }
+  .log .msg .det { font: 400 11px/1.55 var(--mono); color: var(--dim2); }
+  .log .msg .det p { margin: 0; }
+  @media (max-width: 980px) {
+    .log .msg { grid-template-columns: minmax(0, 1fr); }
+    .log .msg .mv { margin: 3px 0 1px; }
+  }
   .log .msg.x { border-left-color: var(--p1); }
   .log .msg.x .who, .log .msg.x .who i { color: var(--p1); }
   .log .msg.x .mv { color: var(--p1); }
@@ -172,12 +185,25 @@
   </header>
 
   <div class="layout">
-    <section class="card" id="boardCard">
-      <div id="boardHost">
-        <canvas id="board" width="720" height="720"></canvas>
-        <div id="thinkDots"><i></i><i></i><i></i><span id="thinkTxt">CPU THINKING</span></div>
-      </div>
-    </section>
+    <div id="playCol">
+      <section class="card" id="boardCard">
+        <div id="boardHost">
+          <canvas id="board" width="720" height="720"></canvas>
+          <div id="thinkDots"><i></i><i></i><i></i><span id="thinkTxt">CPU THINKING</span></div>
+        </div>
+      </section>
+
+      <!-- The game's own history, under the board it describes and as wide as that board. The
+           Engine report in the sidebar holds only the last move; this holds the whole game, in
+           the order it happened, in the colours of the stones that made it. -->
+      <section class="card">
+        <h2>Decision log</h2>
+        <div class="body">
+          <div class="log" id="logList"><p class="empty">Nothing decided yet — every search an engine makes is written here, in the order it happened.</p></div>
+          <p class="cap">One line per decision: who decided, the square chosen, how deep the search actually saw, what it cost, and why. The colours match the stones, so a game reads as a conversation. Undo takes the lines back with the moves.</p>
+        </div>
+      </section>
+    </div>
 
     <aside>
       <div class="card">
@@ -267,14 +293,6 @@
       </div>
 
       <div class="card">
-        <h2>Decision log</h2>
-        <div class="body">
-          <div class="log" id="logList"><p class="empty">Nothing decided yet — every search an engine makes is written here, in the order it happened.</p></div>
-          <p class="cap">One line per decision: the square chosen, how deep the search actually saw, what it cost, and why. The colours match the stones, so a game reads as a conversation. Undo takes the lines back with the moves.</p>
-        </div>
-      </div>
-
-      <div class="card">
         <h2>Notes</h2>
         <div class="body note">
           Win by lining up <b>5 stones</b> horizontally, vertically or diagonally. The engine scores every
@@ -283,7 +301,8 @@
           Every cell that would complete a five is tracked incrementally, so a win is always taken and an
           enemy five is never ignored. Look-ahead is iterative: it always finishes the minimum depth and opens
           a deeper pass only when the projected cost fits the clock. A level <i>is</i> a clock —
-          <b>0.5&nbsp;s, 1.5&nbsp;s, 3&nbsp;s, 6&nbsp;s</b> — and that time is spent across cores: each worker
+          the strength menu states it in full, in seconds, plies and cores —
+          and that time is spent across cores: each worker
           searches different first moves of the same position to the same depth and the parts are merged, which
           is what turns extra time into extra plies. The report says how many of them answered.
           If several moves come back almost equal, the engine sometimes plays one of them instead of the top
@@ -308,7 +327,7 @@
                 <option value="6">6 plies</option>
                 <option value="8">8 plies</option>
                 <option value="12">12 plies</option>
-                <option value="16">16 plies (as deep as Expert is allowed)</option>
+                <option value="16">16 plies (as deep as Master is allowed)</option>
               </select>
             </label>
             <label class="f">Move width
@@ -357,9 +376,11 @@ function Match5Engine() {
      transposition table has to store them relative to their own node (see negamax). */
   const MATE = WINVAL - 2048;
 
-  /* Tuned by measurement on a 25x25 midgame (~20-30k nodes/s): a narrow move list
-     pays for itself in extra plies. hard reaches 6 plies inside 900 ms,
-     expert reaches 7 plies inside 2.4 s.
+  /* Tuned by measurement on a 25x25 midgame: a narrow move list pays for itself in extra
+     plies, so every level is given the widest list it will use and the depth ceiling decides
+     how much of the clock goes to depth. What each level actually reaches in plies is
+     measured in the browser and written up in the README - it moves with the machine, so it is
+     deliberately not repeated here where it would go stale.
      tieMargin / tieChance control variety: after a search, every root move scoring within
      tieMargin of the best one is "almost as good", and with probability tieChance one of
      them is picked instead of the top move (weighted towards the better ones).
@@ -368,16 +389,18 @@ function Match5Engine() {
      that budget the engine uses everything it has - the widest move choice and the deepest
      search the time allows. Strength that is a number of milliseconds is also a promise the
      report can keep: "3000 ms" means the same thing to the player as the panel says.
-     Only the three weaker levels hold anything back, and what they hold back is depth, because
-     an "Easy" that gets 9 plies on a fast machine is not Easy. `threads` is how many search
-     workers a level may use; 0 means every core but one. */
+     Only the levels below Master hold anything back, and what they hold back is depth, because
+     an "Easy" that gets 9 plies on a fast machine is not Easy; Master's ceiling is only there so
+     a single search cannot run away with the page. `threads` is how many search workers a level
+     may use; 0 means every core but one, which is what a 10-second clock is worth spending on. */
   const LEVELS = {
-    easy:   { label: 'Easy',   maxDepth: 4,  minDepth: 1, timeMs: 500,  branch: 20, rootBranch: 26, threads: 1, tieMargin: 1400, tieChance: 0.60 },
-    medium: { label: 'Medium', maxDepth: 6,  minDepth: 2, timeMs: 1500, branch: 20, rootBranch: 30, threads: 2, tieMargin: 240,  tieChance: 0.45 },
-    hard:   { label: 'Hard',   maxDepth: 10, minDepth: 2, timeMs: 3000, branch: 20, rootBranch: 34, threads: 4, tieMargin: 110,  tieChance: 0.34 },
-    expert: { label: 'Expert', maxDepth: 16, minDepth: 2, timeMs: 6000, branch: 20, rootBranch: 40, threads: 0, tieMargin: 45,  tieChance: 0.22 }
+    easy:   { label: 'Easy',   maxDepth: 3,  minDepth: 1, timeMs: 100,   branch: 20, rootBranch: 26, threads: 1, tieMargin: 1400, tieChance: 0.60 },
+    medium: { label: 'Medium', maxDepth: 5,  minDepth: 2, timeMs: 500,   branch: 20, rootBranch: 30, threads: 2, tieMargin: 240,  tieChance: 0.45 },
+    hard:   { label: 'Hard',   maxDepth: 6,  minDepth: 2, timeMs: 1500,  branch: 20, rootBranch: 34, threads: 4, tieMargin: 110,  tieChance: 0.34 },
+    expert: { label: 'Expert', maxDepth: 10, minDepth: 2, timeMs: 3000,  branch: 20, rootBranch: 40, threads: 4, tieMargin: 45,   tieChance: 0.22 },
+    master: { label: 'Master', maxDepth: 16, minDepth: 2, timeMs: 10000, branch: 20, rootBranch: 40, threads: 0, tieMargin: 20,   tieChance: 0.12 }
   };
-  const LEVEL_ORDER = ['easy', 'medium', 'hard', 'expert'];
+  const LEVEL_ORDER = ['easy', 'medium', 'hard', 'expert', 'master'];
 
   const clock = (typeof performance !== 'undefined' && performance.now)
     ? function () { return performance.now(); }
@@ -1319,8 +1342,12 @@ function Match5Engine() {
       try { plan = S.g.rootPlan(player, level, override); } catch (e) { plan = null; }
       if (plan && plan.done) return Promise.resolve({ result: plan.done, stats: S.g.stats() });
       if (plan && !plan.opening && plan.cfg.maxDepth >= 2 && plan.cfg.budget >= 400) {
-        const n = threadsFor(level, plan.cfg);
-        if (n >= 2 && plan.cells.length >= 2 * n && buildPool(n)) {
+        /* Split across as many workers as this root can actually feed - at least two squares
+           each, so a part is never just a message round trip. A root of twenty squares in a
+           ten-second clock still wants ten workers: refusing to split there would leave the
+           rest of the machine idle and the move no deeper. */
+        const n = Math.min(threadsFor(level, plan.cfg), Math.floor(plan.cells.length / 2));
+        if (n >= 2 && buildPool(n)) {
           return splitSearch(player, level, override, plan, n);
         }
       }
@@ -1374,6 +1401,7 @@ function Match5Engine() {
      transposition table means no cross-thread bookkeeping; the price is some duplicated work,
      which the extra cores pay for with real plies. */
   const MAX_POOL = 8;
+  const MAX_POOL_ALL = 16;   // what "every core but one" is capped at - the pool table in the README is why
   let pool = null, poolDead = false, partId = 0;
 
   /* Threads follow the clock, not the label: a level spends its clock on as many cores as the
@@ -1388,9 +1416,11 @@ function Match5Engine() {
     const want = (ENG.LEVELS[chosen] || ENG.LEVELS.hard).threads | 0;
     if (want) return Math.max(1, Math.min(MAX_POOL, want));
     /* 0 in the table means every core we can spare - and never the one painting the board, or
-       the interface is the thing that stops moving. */
+       the interface is the thing that stops moving. This is what the longest clock buys, so the
+       explicit MAX_POOL cap does not apply to it; MAX_POOL_ALL is only there so a server-class
+       CPU cannot turn one move into sixty workers. */
     const hw = (navigator.hardwareConcurrency || 2) | 0;
-    return Math.max(1, Math.min(MAX_POOL, hw - 1));
+    return Math.max(1, Math.min(MAX_POOL_ALL, hw - 1));
   }
 
   function buildPool(n) {
@@ -1880,7 +1910,9 @@ function Match5Engine() {
     if (o.mv != null) div.dataset.mv = String(o.mv);
     div.innerHTML = '<div class="who">' + esc(o.who) + (o.tag ? ' <i>' + esc(o.tag) + '</i>' : '') + '</div>' +
       '<div class="mv">' + esc(o.mvText) + '</div>' +
-      (o.det ? o.det.map((d) => '<div class="det">' + esc(d) + '</div>').join('') : '');
+      /* one .det block, not one per line: the row is a three-column grid (who / square / what
+         it cost), and the reasoning is the third column however many lines it takes */
+      (o.det ? '<div class="det">' + o.det.map((d) => '<p>' + esc(d) + '</p>').join('') + '</div>' : '');
     list.appendChild(div);
     if (follow) list.scrollTop = list.scrollHeight;
     while (list.children.length > 80) list.removeChild(list.firstChild);   // a long game stays bounded

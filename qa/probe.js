@@ -16,6 +16,8 @@
   if (hash === 'hard') { mode('cvc'); setSel('lvl1Sel', 'hard'); setSel('lvl2Sel', 'medium'); }
   else if (hash === 'fast') { mode('cvc'); setSel('lvl1Sel', 'medium'); setSel('lvl2Sel', 'medium'); }
   else if (hash === 'expert') { mode('cvc'); setSel('lvl1Sel', 'expert'); setSel('lvl2Sel', 'expert'); }
+  else if (hash === 'master') { mode('cvc'); setSel('lvl1Sel', 'master'); setSel('lvl2Sel', 'master'); }
+  else if (hash === 'easy') { mode('cvc'); setSel('lvl1Sel', 'easy'); setSel('lvl2Sel', 'easy'); }
   else if (hash === 'd0') {
     mode('cvc'); setSel('lvl1Sel', 'medium'); setSel('lvl2Sel', 'medium');
     setSel('depthSel', '0');           // pinned 0 plies: no search at all
