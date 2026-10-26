@@ -87,6 +87,7 @@ All plain Node (no packages, no test runner; developed on Node v24):
 ```
 node tests/file-check.mjs        # static gate: engine block parses, stays DOM-free, every ui.* exists
 node tests/engine-test.mjs       # engine suite (~51,000 checks)
+node tests/icon-check.mjs        # the shipped icon: the container, every frame in it, the sizes a browser or shell asks for
 ```
 
 The suite covers: incremental scoring vs a brute-force rescan of every 5-window;
@@ -114,6 +115,42 @@ node tests/ladder-sample.mjs 8 13 hard:medium,hard:easy   # strength measured ov
 node tests/diag-tt.mjs                            # what one worker's transposition table costs: entries stored at a real clock, measured bytes per entry, the pool's worst case (--expose-gc gives a clean byte figure)
 node tests/pool-compare.mjs 15 8 master           # A/B of two pool sizes on the *same* position in the real page, read from the game's own decision log; needs QA Chrome on 9333
 ```
+
+### Icon
+
+`match5.ico` is the project's mark: a dark tile, a grid, an orange ✕ and a cyan ○ — the two
+colours the stones use, so the file icon and the board are one identity. It is a container of
+nine frames (16, 20, 24, 32, 40 and 64 as uncompressed 32-bit bitmaps; 96, 128 and 256 as
+PNG-compressed), which is what lets Windows, a taskbar or a browser tab pick a real size
+instead of scaling one image down. `node tests/icon-check.mjs` checks the container and every
+frame inside it: that the small sizes a browser and the shell ask for actually exist, that no
+frame runs past the end of the file or over its neighbour, that each bitmap holds a complete
+image *plus* its AND mask (to the byte), and that each PNG frame parses as an RGBA image of
+exactly the size its directory entry claims. The reason to gate it is that a re-export breaks
+it quietly — one truncated frame, or a dropped 16px one — and every viewer that happens to
+choose a different frame hides the damage.
+
+`qa/icon-shell-check.ps1` checks the other end of it, Windows only: it asks System.Drawing and
+the shell itself (`SHGetFileInfo`) to load the icon and renders what they hand back. Both agree
+at 16px and 32px. System.Drawing on .NET Framework — the one PowerShell 5.1 runs — cannot
+render the PNG-compressed frames ("Requested range extends past the end of the array"); that is
+the old parser, not this file, since those frames parse standalone and the shell renders them.
+
+The game itself does not reference the icon. A page opened from `file://` picks up no icon on
+its own, and embedding one would mean carrying about 77 KB of base64 inside the single HTML
+file — a trade for whoever wants a tab icon, not a default to take silently.
+
+`qa/icon-audit.txt` is the record of the audit this icon was accepted on. For each of the nine
+frames it lists the extent and bounding box of both marks, whether the ring is still a ring with
+its hole open, the gap between the two marks, and the contrast ratios: mark against the tile
+6.5–7.9:1, the grid lines 3.4–3.5:1 (so the marks lead the grid by 1.9–2.3× — at 16px the grid
+is allowed to fall away and the ✕ and ○ are not), and the separation from the wallpaper behind a
+transparent icon: 16.1:1 against a light desktop, 2.9–4.9:1 against a dark one, against a 1.5:1
+floor. Every row reads `ok`, and it ends by stating both halves plainly: marks legible at every
+size, container well formed. It is kept as **evidence, not as a check**: the container half is
+regenerated today by `node tests/icon-check.mjs`; the legibility half was measured by an ad-hoc
+pass when the icon was made, so it says nothing about a future re-export until that pass is
+written down as a test.
 
 ## Browser QA
 
