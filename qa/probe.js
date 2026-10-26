@@ -98,8 +98,9 @@
       cols[c] = (cols[c] || 0) + 1;
     });
     var seen = Object.keys(cols).map(function (c) { return c + '×' + cols[c]; });
-    var last = kids.length ? kids[kids.length - 1].textContent.replace(/\s+/g, ' ').slice(0, 170) : '(none)';
-    return kids.length + ' lines cols[' + seen.join(',') + '] last "' + last + '"';
+    // the log is written newest-first, so the line to read is the FIRST child, not the last
+    var newest = kids.length ? kids[0].textContent.replace(/\s+/g, ' ').slice(0, 170) : '(none)';
+    return kids.length + ' lines cols[' + seen.join(',') + '] newest "' + newest + '"';
   }
   // the advanced panel must be closed by default, and its visible line must state what is pinned
   function foldInfo() {

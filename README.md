@@ -11,10 +11,15 @@ a browser.
 | --- | --- |
 | Mode | 2 Players / 1P vs CPU / CPU vs CPU |
 | Board | 9×9 up to 40×40; 25×25 is the default |
+| Board colour | Slate (the default, a dark board) or Paper — a light graph-paper sheet in the colours of a hand-drawn game. See [Two boards](#two-boards) |
 | CPU strength / Engine X + Engine O | Easy, Medium, Hard, Expert, Master. In "1P vs CPU" there is one strength control and it applies to the CPU on either side; in "CPU vs CPU" each side has its own |
 | Look ahead · Move width · Time per move | these three live in **Search settings — advanced**, folded by default and placed last. Pinning any of them overrides what the level menu promises; the summary line of the collapsed panel states what is pinned |
 | Engine report | what the last search actually did — which engine made it (written in that player's colour), how deep it got, positions looked at, the time, how many workers answered, why it stopped, and the distance to a five when the outcome is proven |
-| Decision log | under the board, as wide as it is: every engine decision, and every move you make, in the order they happened and in the colours of the stones, so an answer is still readable after the opponent has moved. Undo takes the lines back together with the moves |
+| Decision log | under the board, as wide as it is: every engine decision, and every move you make, newest at the top and the older ones pushed down. Engine lines are written in the colour of the side that decided, so an answer is still readable after the opponent has moved; your own moves are plain ink. Undo takes the lines back together with the moves |
+
+The **board size, the difficulty and the board colour are kept on the computer** and put back
+when the page is opened again — see [what the page remembers](#what-the-page-remembers). A game
+in progress is not kept, and neither is the mode.
 
 ## Strength is a clock
 
@@ -68,7 +73,11 @@ as wide as it is, and keeps every decision as a line of the game — who decided
 the square chosen, how deep the search actually saw, what it cost, how many
 workers it took, and why — so "why did it play there" is still answerable after
 the opponent has moved, and a game between two engines reads as
-a conversation. Both surfaces are built from the same composed strings, so they
+a conversation. The newest line is the one at the top and the older ones are
+pushed down, because that is the line being read; a reader who has scrolled into
+the older lines keeps looking at the same line as new ones arrive above them, and
+the list is bounded from the bottom, where its oldest lines are. Both surfaces are
+built from the same composed strings, so they
 cannot disagree about what happened. Why a search stopped is stated as it
 happened (`clock ran out
 during a deeper pass`, `proved a forced win`, `proved a forced loss - delaying
@@ -80,12 +89,117 @@ First moves are deliberately varied: the opening choice is randomised over the
 equivalent central squares, and when several moves are measured to be almost as
 good the engine sometimes takes one of them instead of the top one.
 
+## Two boards
+
+The page offers two board colours, **Slate** (the default) and **Paper**. They are not two
+screenshots of a style: the theme is one block of CSS custom properties, and the canvas — which
+is drawn, not styled — reads those same properties into a palette once per theme change, so the
+page and the board cannot drift apart. `node tests/file-check.mjs` compares the two palettes
+variable by variable, so an alternative theme that forgets one colour cannot land.
+
+Paper was taken from a photograph of a hand-drawn game rather than invented.
+`qa/paper-palette.py <picture>` (bundled Python with Pillow — the one non-Node tool here, and
+the picture itself is not in the repo) quantizes the image and prints what is in it:
+
+| in the picture | share | colour |
+| --- | --- | --- |
+| the paper | 93.0% | `#fcfcfc` |
+| the grid | 4.5% | `#a8d8e4` |
+| black ○ | 1.24% | `#000000` |
+| blue ✕ | 1.00% | `#0000ff` |
+| the red stroke over the winning five | 0.29% | `#ff0000` |
+
+Those five values are exactly what `[data-theme=paper]` carries for the board surface, the grid,
+the two stones and the winning line. Two things are **not** taken from the picture, and are said
+here rather than left to be noticed afterwards:
+
+- the cards and the page behind the sheet are greyed (`#f4f7f9`, `#eef2f5`) instead of the same
+  white, so the board stays a distinct object on the page. The picture is a board filling the
+  frame; it has no page to sit on, and a white sheet on white cards would disappear;
+- the mark over the winning five is drawn from the theme rather than hardcoded, because a wide
+  translucent band is what reads as a highlight on a dark board and would be a wash over the
+  sheet that Paper is made of — and the reference has no wash. Slate therefore draws a band
+  `0.62` of a cell wide in the winner's colour at 0.3–0.6 alpha; Paper draws a pen `0.16` of a
+  cell wide, near-solid `#ff0000`. The width, the solidity and how much of it the pulse adds are
+  palette values (`--winpen`, `--winink`, `--winrange`). `qa/paper-palette.py` measures the
+  picture's own pen for that: its grid is drawn at **45 px a cell** and the stroke across the five
+  is **7 px** thick, spanning 3.98 cells centre to centre, which is 0.16 of a cell — and a span of
+  four cell-widths is exactly what this game draws, from the first square's centre to the fifth's.
+  What stays identical between themes is the behaviour: the same pulse that says "these five".
+
+Slate leaves `--winrgb` empty, which the drawing takes to mean "wear the winner's own colour".
+That is a stated difference between the themes, not an oversight — a red pen is what the picture
+shows, while a red five on a dark board would be a third hue competing with the two the stones use.
+
+Legibility was measured from the pixels the game produced, not from the values in the stylesheet.
+`node qa/ui-check.mjs` histograms the canvas of each theme, takes the dominant colour as the
+surface everything has to be read against, and computes every mark against *that*:
+
+| Theme | X | O | the winning five | body text | secondary text |
+| --- | --- | --- | --- | --- | --- |
+| Slate | 9.7 | 10.4 | 9.7 (wears the winner's colour) | 16.6 | 5.8 |
+| Paper | 7.5 | 16.6 | 3.5 (the red pen) | 16.1 | 4.8 |
+
+Small text has to clear 4.5:1 and a mark that carries meaning 3.0:1; both themes do, on the
+surface they actually draw. The grid line is deliberately quiet — 1.4:1 against the surface,
+against 1.5:1 measured in the picture — because it is a guide and not information.
+
+That pass is also what changed a number in the *default* theme: its secondary text colour came to
+3.4–4.1:1 on the surfaces it is used on, under the bar for small text, and is now `#7a8ea6` at
+4.8–5.8.
+
+What the drawing is measured for is the parts that are not decoration:
+
+- the surface it paints **is** the surface the theme declares: the dominant colour of the canvas
+  sits within 12/255 of `--felt-a`/`--felt-b` in both themes (`feltMatchesDrawn: true` in the
+  pass output), which is the claim that a drawn board follows its theme instead of keeping last
+  session's colours under a new coat of page;
+- the grid paints at exactly `#a8d8e4` — 6.6% of the canvas, which is what 25 lines a device
+  pixel or two across 749 px have to come to; the picture's grid is the same colour at 4.5%, on
+  cells 45 px wide with thinner lines;
+- the pen's width relative to a cell: 0.16 here, 7 px on a 45 px cell in the picture.
+
+The area shares of the **stones and the pen** are deliberately not quoted. How much red or blue a
+frame contains depends on how many moves have been played, and for the pen on where its pulse
+happens to be when the frame is taken — two runs of one game gave 0.09% and 0.12% for the same
+stroke. A number that moves between runs is not a claim, so it is not made.
+
+Changing the colour does not disturb the game either: the pass reports the same move count before
+and after the switch, and that the segment control moved to the other button.
+
+## What the page remembers
+
+The board size, the difficulty and the board colour are written to `localStorage` under
+`match5.prefs.v1` as the player chooses them, and read back when the page is opened again.
+
+- every remembered value is re-checked against the choices actually on offer before it is used. A
+  size no longer offered, a level that no longer exists, a theme that was renamed: each falls back
+  to the default instead of being followed into something the page cannot render;
+- reading and writing are both inside a guard, so a page whose storage is refused — private mode,
+  a full quota, an origin that disallows it — still plays;
+- a small script in `<head>` applies the remembered theme before the first paint, so the page does
+  not open dark and then change under the reader;
+- what the controls show is what gets stored: the write happens after the state and the controls
+  have been reconciled, so in "1P vs CPU" the stored difficulty is the one the single control
+  displays, not a stale value left behind by an earlier two-engine game.
+
+Not kept, deliberately: the game in progress (a resumed position would ask the player to remember
+where they were, and the log that explains that position is not kept either), the mode, and the
+advanced pins, which belong to an afternoon of tuning rather than to a preference.
+
+Measured rather than assumed: the pass sets 31×31, Expert and Paper through the real controls,
+prints what the entry says, leaves the page and comes back to the shipped file with no query
+string, and reports what a new session puts back — `size 31, level expert, theme paper`, the paper
+palette applied and the board already drawn in it, `movesAtStart 0` and an empty log. Then it puts
+`{not json` into the key and reloads: the page comes back at 25×25, Hard and Slate, rewrites the
+entry cleanly, and reports no errors.
+
 ## Tests
 
 All plain Node (no packages, no test runner; developed on Node v24):
 
 ```
-node tests/file-check.mjs        # static gate: engine block parses, stays DOM-free, every ui.* exists
+node tests/file-check.mjs        # static gate: engine block parses and stays DOM-free, every ui.* exists, every theme palette defines every colour the first one does, a remembered setting is checked against the choices on offer, and the decision log inserts at the top and trims from the bottom
 node tests/engine-test.mjs       # engine suite (~51,000 checks)
 node tests/icon-check.mjs        # the shipped icon: the container, every frame in it, the sizes a browser or shell asks for
 ```
@@ -188,15 +302,40 @@ drawn in one of the two stone colours rather than a third colour, and that the
 advanced panel stays closed while still naming what was pinned.
 `qa/cdp-profile/`, `qa/*.png` and `qa/probe.html` are generated and ignored.
 
-The layout is checked separately (`node qa/ui-check.mjs`), because a report that tells the
-truth is not enough — it has to stay reachable and readable while the game moves on. It
-prints where the Engine report sits relative to the first screen, the computed colour of the
-decision text, the decision log's line count and colour histogram plus its oldest and newest
-line, and the state of the folded advanced panel together with the summary line that stays
-visible when it is closed. It also measures the log's position in the page rather than
-trusting the markup: that it starts below the board and shares that column's left edge and
-width, that its rows are laid out as one row per decision, and that no row's text spills out
-of the card. It writes `qa/log-look.png` and `qa/settings-open.png` for the eye.
+The layout is checked separately (`node qa/ui-check.mjs`), because a report that tells the truth is
+not enough — it has to stay reachable and readable while the game moves on, and a second board
+colour has to be legible rather than merely different. It prints where the Engine report sits
+relative to the first screen, the computed colour of the decision text, the decision log's line
+count and colour histogram plus its newest and oldest line, and the state of the folded advanced
+panel together with the summary line that stays visible when it is closed. It also measures the
+log's position in the page rather than trusting the markup: that it starts below the board and
+shares that column's left edge and width, that its rows are laid out as one row per decision, and
+that no row's text spills out of the card.
+
+The log's order is measured with lines arriving **on purpose**. Two engines at Medium finish a
+25×25 game faster than the pass can look at one, so the moves are made there: pointer events on
+squares chosen on a lattice wider than two cells, in "2 Players" mode, which sends a line through
+the same `logEntry` path an engine line uses and lands it the moment the square is clicked. The
+pass then reads the move numbers down the list (36, 35, 34, 33, 32), scrolls into the older lines,
+adds one more move, and identifies the row the reader was on both times by the move it describes.
+Three things have to hold: the newest decision is the first row, the list stays newest-first, and
+the row being read stays at the same pixel inside the scroll port. That last one is what caught a
+slip of 6 px per line — the compensation counted the row and not the gap above it — and it is why
+the list switches the browser's own scroll anchoring off: the page is then the only thing moving
+the reader, and it moves them the same amount in every browser.
+
+The two boards are measured as pixels. The pass histograms the canvas of each theme the way
+`qa/paper-palette.py` histograms the reference picture, and reports the surface the game actually
+drew — within 12/255 of the declared felt, which is the claim that a drawn board follows its theme
+— the five most common colours, whether the surface it painted is the one the theme declares, and
+the contrast of every mark against that surface, sampled from the drawing rather than from the
+stylesheet. The
+remembered settings are
+tested on the shipped `match5.html` rather than on the probe page, because the probe pins the
+levels from the URL hash and would hide what the page restored by itself. For the eye it writes
+`qa/log-look.png`, `qa/settings-open.png`, `qa/board-slate.png`, `qa/board-paper.png`,
+`qa/board-paper-winner.png` (a finished game, so the red five is in the frame) and
+`qa/board-remembered.png`.
 
 ### What the pool was measured to do (the machine used for development: 16 logical cores)
 

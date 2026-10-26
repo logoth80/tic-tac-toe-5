@@ -92,7 +92,8 @@ async function main() {
       await sleep(900);
       const all = await logLines();
       if (all.length > count) {
-        const r = parse(all[all.length - 1]);
+        /* the log is newest-first, so the line that just arrived is the first one */
+        const r = parse(all[0]);
         if (r.nodes !== null && r.depth > 0) return r;
       }
     }
@@ -100,16 +101,18 @@ async function main() {
   };
   const rewindAndSearch = async (cores) => {
     await setHw(cores);
-    const before = (await logLines()).length;              // the line for this move is about to be taken back
     await evaluate("document.getElementById('undoBtn').click();'undo'");
+    /* The log right after the rewind, once the lines for the taken-back moves are gone. The next
+       line the game writes is the re-search of the position just rewound to, and with the log
+       newest-first that line is the first one - not the last, which is the oldest line of the
+       game and would measure nothing about this position. */
+    const after = (await logLines()).length;
     const t0 = Date.now();
     while (Date.now() - t0 < 120000) {
       await sleep(900);
       const all = await logLines();
-      /* Only a line beyond what the log held *before* the rewind can be the re-search: the older
-         lines are still in the log, and accepting one of them would silently measure nothing. */
-      if (all.length <= before) continue;
-      const r = parse(all[all.length - 1]);
+      if (all.length <= after) continue;
+      const r = parse(all[0]);
       /* the worker count in the line is the engine's own account of what it used, so an arm can
          only be accepted if it actually ran with no more workers than it asked for */
       if (r.nodes !== null && r.depth > 0 && r.workers !== null && r.workers <= cores) return r;

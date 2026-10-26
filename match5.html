@@ -14,15 +14,98 @@
     --line2: #2f3d4f;
     --ink: #e8eef6;
     --dim: #8ea0b5;
-    --dim2: #64748b;
+    /* The secondary text colour is measured, not eyeballed: card headings, table labels and the
+       reasoning column are all small text, so this has to clear 4.5:1 on the lightest surface it
+       is ever used on. #64748b came to 3.4-4.1; this reaches 4.8-5.8. */
+    --dim2: #7a8ea6;
     --p1: #f5a742;
     --p2: #48cfd8;
     --accent: #78a9ff;
     --good: #63d68a;
     --bad: #f0736a;
+    /* The same colours as components, because a tint or a glow is a colour at another alpha and
+       neither CSS nor the canvas can build one from a hex. The canvas reads these too: the board
+       is drawn, not styled, so a theme that stopped at the page would leave a slate board
+       floating in a paper page. --winrgb is declared empty here, which means the winning five
+       wears the winner's own colour; a theme that wants a pen of its own for it puts a colour
+       there, and Paper draws the red line of the picture its colours came from. */
+    --p1rgb: 245, 167, 66;
+    --p2rgb: 72, 207, 216;
+    --accrgb: 120, 169, 255;
+    --p1soft: #f7c47c;
+    --pillrgb: 10, 14, 20;
+    --honergb: 255, 255, 255;
+    --on-ink: #06111f;
+    --hover-ink: #ffffff;
+    --track: #1b2531;
+    --best-ink: #ffffff;
+    /* The mark that names the winning five. Three numbers that belong together: how wide, as a
+       fraction of a cell; how solid at the bottom of the pulse; and how much the pulse adds.
+       --winrgb empty means "wear the winner's colour", and a wide translucent band is what reads
+       as a highlight on a dark board. Paper sets its own pen: a thin, solid red line, as in the
+       picture that theme came from. */
+    --winrgb: ;
+    --winpen: .62;
+    --winink: .28;
+    --winrange: .3;
+    --felt-a: #101822;
+    --felt-b: #0c1219;
+    --grid: #232f3d;
+    --star: #31414f;
+    --coord: #4d5c6d;
     --radius: 12px;
     --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  }
+
+  /* The second board, taken from a picture of a game drawn on graph paper, and using that
+     picture's own numbers rather than an impression of them - sampled with qa/paper-palette.py:
+     paper #fcfcfc, the printed grid #a8d8e4, a blue pen for X, black ink for O, a red pen for
+     the five that won. It themes the whole page, not just the canvas: a side's colour is also
+     the colour its decisions are written in, and a black ring would be invisible on a dark
+     panel, so the surfaces have to follow the stones. Every colour the first block defines is
+     restated here - tests/file-check.mjs fails the file if a theme forgets one. */
+  [data-theme=paper] {
+    --bg: #e8ecef;
+    --bg2: #eef1f3;
+    --panel: #f4f7f9;
+    --panel2: #eef2f5;
+    --line: #d7e2e8;
+    --line2: #b9cdd7;
+    --ink: #10151a;
+    --dim: #46545f;
+    --dim2: #5d6c77;
+    --p1: #0000ff;
+    --p2: #0d1117;
+    --accent: #1f6d8f;
+    --good: #1a7f4b;
+    --bad: #c0271c;
+    --p1rgb: 0, 0, 255;
+    --p2rgb: 13, 17, 23;
+    --accrgb: 31, 109, 143;
+    --p1soft: #6f7cff;
+    --pillrgb: 252, 252, 252;
+    --honergb: 20, 40, 60;
+    --on-ink: #ffffff;
+    --hover-ink: #10151a;
+    --track: #e2eaef;
+    --best-ink: #000000;
+    /* the sheet is lighter than the card it lies on: on paper the board's edge is a difference
+       in white, exactly as it is in the picture, not a border */
+    --felt-a: #fcfcfc;
+    --felt-b: #f7f9fa;
+    --grid: #a8d8e4;
+    --star: #86bfce;
+    --coord: #94a9b6;
+    --winrgb: 255, 0, 0;
+    /* the picture's pen rather than a band: solid, barely pulsing, and as wide as the stroke in
+       the reference actually is. Measured off the sheet itself - its grid is drawn at 45 px a cell
+       and the stroke across the five is 7 px thick, which is 0.16 of a cell; the theme says the
+       same thing in the unit this board is drawn at. A wide translucent band would put a wash over
+       the sheet this theme is made of, and the reference has none. */
+    --winpen: .16;
+    --winink: .82;
+    --winrange: .18;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
@@ -57,14 +140,14 @@
      the last move marker and the whole grid visible after a game ends */
   #banner { display: none; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px;
     border: 1px solid var(--accent); border-left-width: 3px; border-radius: 10px; padding: 9px 11px;
-    background: rgba(245, 167, 66, .07); }
+    background: rgba(var(--p1rgb), .07); }
   #banner.show { display: flex; }
   #banner .res { font-size: 17px; font-weight: 700; letter-spacing: .04em; }
   #banner .sub { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
   #banner .btn { flex: 0 0 auto; }
 
   #thinkDots { position: absolute; left: 20px; top: 20px; display: none; align-items: center; gap: 8px;
-    font: 600 11px/1 var(--mono); letter-spacing: .1em; color: var(--dim); background: rgba(10,14,20,.72);
+    font: 600 11px/1 var(--mono); letter-spacing: .1em; color: var(--dim); background: rgba(var(--pillrgb), .72);
     border: 1px solid var(--line2); border-radius: 999px; padding: 7px 11px; z-index: 2; }
   #thinkDots.show { display: flex; }
   #thinkDots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blip 1s infinite; }
@@ -85,13 +168,13 @@
   .seg button { flex: 1; background: var(--panel2); color: var(--dim); border: 0; padding: 8px 4px;
     font: 700 11px/1.2 var(--sans); letter-spacing: .06em; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--line2); }
-  .seg button.on { background: var(--accent); color: #06111f; }
+  .seg button.on { background: var(--accent); color: var(--on-ink); }
 
   .btns { display: flex; gap: 8px; flex-wrap: wrap; }
   button.btn { background: var(--panel2); color: var(--ink); border: 1px solid var(--line2); border-radius: 9px;
     padding: 9px 12px; font: 600 12.5px/1 var(--sans); cursor: pointer; letter-spacing: .02em; }
-  button.btn:hover { border-color: var(--accent); color: #fff; }
-  button.btn.primary { background: var(--accent); color: #06111f; border-color: var(--accent); font-weight: 800; }
+  button.btn:hover { border-color: var(--accent); color: var(--hover-ink); }
+  button.btn.primary { background: var(--accent); color: var(--on-ink); border-color: var(--accent); font-weight: 800; }
   button.btn:disabled { opacity: .42; cursor: not-allowed; }
 
   /* ---------- score ---------- */
@@ -105,8 +188,8 @@
 
   /* ---------- eval bar ---------- */
   .evalwrap { display: flex; align-items: center; gap: 9px; margin-top: 12px; }
-  .evalbar { position: relative; flex: 1; height: 10px; border-radius: 999px; background: #1b2531; border: 1px solid var(--line2); overflow: hidden; }
-  .evalbar i { position: absolute; inset: 0 auto 0 0; width: 50%; background: linear-gradient(90deg, var(--p1), #f7c47c); transition: width .25s ease; }
+  .evalbar { position: relative; flex: 1; height: 10px; border-radius: 999px; background: var(--track); border: 1px solid var(--line2); overflow: hidden; }
+  .evalbar i { position: absolute; inset: 0 auto 0 0; width: 50%; background: linear-gradient(90deg, var(--p1), var(--p1soft)); transition: width .25s ease; }
   .evalbar u { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--dim2); left: 50%; }
   .evalnum { font: 700 11px/1 var(--mono); color: var(--dim); min-width: 62px; text-align: right; }
 
@@ -125,7 +208,7 @@
   .cands th { text-align: left; color: var(--dim2); font-weight: 600; letter-spacing: .04em; padding-bottom: 4px; }
   .cands td { padding: 2px 0; color: var(--dim); }
   .cands td.mv { color: var(--ink); font-weight: 700; }
-  .cands tr.best td { color: #fff; }
+  .cands tr.best td { color: var(--best-ink); }
   .cands td.sc { text-align: right; }
 
   /* ---------- decision log ----------
@@ -133,10 +216,14 @@
      a decision is not erased when the other side moves. Same colours as the stones.
      The card is as wide as the board, so a decision is one row: who decided, the square, then
      what it cost and why. Below the sidebar breakpoint the three parts stack. */
-  .log { display: flex; flex-direction: column; gap: 6px; max-height: 380px; overflow-y: auto; }
+   /* The list scrolls on its own, and the browser's scroll anchoring is switched off here:
+      newest-first insertion is exactly the case anchoring intervenes in, and then the page's own
+      compensation would move the reader twice. One of the two has to own it, and the page does. */
+  .log { display: flex; flex-direction: column; gap: 6px; max-height: 380px; overflow-y: auto;
+    overflow-anchor: none; }
   .log .msg { display: grid; grid-template-columns: 172px 64px minmax(0, 1fr); gap: 3px 12px;
     align-items: baseline; border-left: 3px solid var(--line2); border-radius: 8px;
-    background: rgba(255,255,255,.022); padding: 7px 11px 8px; }
+    background: rgba(var(--honergb), .022); padding: 7px 11px 8px; }
   .log .msg .who { display: flex; gap: 6px; align-items: baseline; font: 700 10px/1.5 var(--sans);
     letter-spacing: .1em; text-transform: uppercase; color: var(--dim2); }
   .log .msg .who i { font: 600 10px/1.5 var(--mono); letter-spacing: 0; font-style: normal; color: var(--dim2); }
@@ -176,6 +263,15 @@
   .pill.hot { color: var(--accent); border-color: var(--accent); }
   .cap { margin: 9px 0 0; color: var(--dim2); font-size: 11.5px; line-height: 1.45; }
 </style>
+<script>
+  /* The remembered theme goes on the document before the page paints, so a paper board does not
+     arrive a frame late. The main script reads and checks the same entry again; this part only
+     has to know which attribute to set. */
+  try {
+    var p5 = JSON.parse(localStorage.getItem('match5.prefs.v1') || '{}');
+    if (p5.theme === 'paper') document.documentElement.dataset.theme = 'paper';
+  } catch (e5) { }
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -199,8 +295,11 @@
       <section class="card">
         <h2>Decision log</h2>
         <div class="body">
-          <div class="log" id="logList"><p class="empty">Nothing decided yet — every search an engine makes is written here, in the order it happened.</p></div>
-          <p class="cap">One line per decision: who decided, the square chosen, how deep the search actually saw, what it cost, and why. The colours match the stones, so a game reads as a conversation. Undo takes the lines back with the moves.</p>
+          <div class="log" id="logList"><p class="empty">Nothing decided yet — every search an engine makes is written here, newest first.</p></div>
+          <p class="cap">One line per decision, newest at the top and the older ones pushed down:
+            who decided, the square chosen, how deep the search actually saw, what it cost, and why.
+            The colours match the stones, so a game reads as a conversation. Undo takes the lines
+            back with the moves.</p>
         </div>
       </section>
     </div>
@@ -229,6 +328,16 @@
               </select>
             </label>
           </div>
+          <!-- A second palette, not a second board: the grid, the stones and the winning line
+               all change, because a side's colour is the colour its moves are drawn in. -->
+          <div class="row">
+            <div class="f" style="flex:1 1 100%">Board colour
+              <div class="seg" id="themeSeg">
+                <button data-theme="slate">Slate</button>
+                <button data-theme="paper">Paper</button>
+              </div>
+            </div>
+          </div>
           <div class="row">
             <label class="f" id="lvl1Wrap"><span id="lvl1Label">Engine X</span>
               <select id="lvl1Sel"></select>
@@ -249,6 +358,8 @@
               <button class="btn" id="hintBtn">Hint</button>
             </div>
           </div>
+          <p class="cap">The board size, the difficulty and the board colour are kept on this
+            computer and put back when the page is opened again. A game in progress is not kept.</p>
           <div class="score" style="margin-top:12px">
             <div><b id="sc1">0</b><span>X</span></div>
             <div><b id="scD">0</b><span>Draw</span></div>
@@ -1262,6 +1373,7 @@ function Match5Engine() {
   const A = 1, B = 2;
   const WIN_LEN = 5;
   const SIZES = [9, 13, 15, 19, 25, 31];
+  const THEMES = ['slate', 'paper'];   // the two colour blocks in the CSS; the page has no third
 
   const $ = (id) => document.getElementById(id);
   const canvas = $('board'), ctx = canvas.getContext('2d');
@@ -1270,7 +1382,7 @@ function Match5Engine() {
     sizeSel: $('sizeSel'), sideSel: $('sideSel'), lvl1Sel: $('lvl1Sel'), lvl2Sel: $('lvl2Sel'),
     lvl1Label: $('lvl1Label'), lvl2Label: $('lvl2Label'),
     depthSel: $('depthSel'), widthSel: $('widthSel'), timeSel: $('timeSel'), timeVal: $('timeVal'),
-    speedSel: $('speedSel'), speedVal: $('speedVal'), modeSeg: $('modeSeg'),
+    speedSel: $('speedSel'), speedVal: $('speedVal'), modeSeg: $('modeSeg'), themeSeg: $('themeSeg'),
     sideWrap: $('sideWrap'), lvl1Wrap: $('lvl1Wrap'), lvl2Wrap: $('lvl2Wrap'), speedWrap: $('speedWrap'),
     newBtn: $('newBtn'), undoBtn: $('undoBtn'), hintBtn: $('hintBtn'), againBtn: $('againBtn'),
     turnTxt: $('turnTxt'), turnPip: $('turnPip'),
@@ -1295,6 +1407,7 @@ function Match5Engine() {
     timeMs: 0,
     delay: 220,
     size: 25,
+    theme: 'slate',
     g: null,
     moves: [],
     over: false,
@@ -1712,8 +1825,8 @@ function Match5Engine() {
 
   function showBanner(res, sub) {
     const tint = S.winner === A
-      ? { c: 'var(--p1)', b: 'rgba(245,167,66,.07)' }
-      : (S.winner === B ? { c: 'var(--p2)', b: 'rgba(72,207,216,.07)' } : { c: 'var(--ink)', b: 'rgba(255,255,255,.03)' });
+      ? { c: 'var(--p1)', b: 'rgba(var(--p1rgb),.07)' }
+      : (S.winner === B ? { c: 'var(--p2)', b: 'rgba(var(--p2rgb),.07)' } : { c: 'var(--ink)', b: 'rgba(var(--honergb),.03)' });
     ui.bannerRes.textContent = res;
     ui.bannerRes.style.color = tint.c;
     ui.bannerSub.textContent = sub;
@@ -1897,14 +2010,15 @@ function Match5Engine() {
      A decision is something one side did at a moment in the game, so it does not belong in a
      panel that only ever shows the newest one. Every search - and every human move - leaves a
      line here, in the colours of the stones, so the game reads as a conversation and an answer
-     survives the opponent's move. Undo takes the lines back with the moves. */
+     survives the opponent's move. Undo takes the lines back with the moves.
+      The newest line goes on top, because that is the one being read: a log that ends below the
+      fold makes the player scroll to see what just happened. */
   const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
   function logEntry(o) {
     const list = ui.logList;
     const empty = list.querySelector('.empty');
     if (empty) empty.remove();
-    const follow = list.scrollHeight - list.scrollTop - list.clientHeight < 70;  // only follow if the reader was at the bottom
     const div = document.createElement('div');
     div.className = 'msg ' + o.side;
     if (o.mv != null) div.dataset.mv = String(o.mv);
@@ -1913,9 +2027,19 @@ function Match5Engine() {
       /* one .det block, not one per line: the row is a three-column grid (who / square / what
          it cost), and the reasoning is the third column however many lines it takes */
       (o.det ? '<div class="det">' + o.det.map((d) => '<p>' + esc(d) + '</p>').join('') + '</div>' : '');
-    list.appendChild(div);
-    if (follow) list.scrollTop = list.scrollHeight;
-    while (list.children.length > 80) list.removeChild(list.firstChild);   // a long game stays bounded
+    /* Newest first, at the top: the log is read the way the game is read - what just happened,
+       then what led to it. Two consequences are handled rather than ignored. The bounded list is
+       trimmed from the bottom, where the oldest lines are. And a reader who has scrolled down
+       into older lines is not thrown about: the rows grow above them, so their scroll position
+       moves down by exactly the height of what was inserted - the list turns the browser's own
+       anchoring off, so this is the only correction applied and it is the same in every browser.
+       A reader at the top is already looking at the newest line. */
+    const reading = list.scrollTop > 0;
+    list.insertBefore(div, list.firstChild);
+    /* the row's own height plus the gap the list puts above it: measuring only the row leaves the
+       reader 6 px short on every line, which over a game is half the list */
+    if (reading) list.scrollTop += div.offsetHeight + (parseFloat(getComputedStyle(list).rowGap) || 0);
+    while (list.children.length > 80) list.removeChild(list.lastChild);
   }
 
   function logDecision(r, info, advice) {
@@ -1963,12 +2087,12 @@ function Match5Engine() {
       if (el.dataset.mv != null && n > kept) list.removeChild(el);
     }
     if (!list.children.length) {
-      list.innerHTML = '<p class="empty">Nothing decided yet — every search an engine makes is written here, in the order it happened.</p>';
+      list.innerHTML = '<p class="empty">Nothing decided yet — every search an engine makes is written here, newest first.</p>';
     }
   }
 
   function clearLog() {
-    ui.logList.innerHTML = '<p class="empty">Nothing decided yet — every search an engine makes is written here, in the order it happened.</p>';
+    ui.logList.innerHTML = '<p class="empty">Nothing decided yet — every search an engine makes is written here, newest first.</p>';
   }
 
   /* ---------------- drawing ---------------- */
@@ -1995,11 +2119,43 @@ function Match5Engine() {
     return [pad + x * cell + cell / 2, pad + y * cell + cell / 2];
   }
 
+  /* The board is drawn, not styled, so a theme cannot stop at the stylesheet: the canvas has to
+     be handed the same colours. They are read once per theme, not once per frame, because the
+     board redraws on animation ticks. */
+  let PAL = null;
+  const rgbaOf = (triplet, a) => 'rgba(' + triplet + ',' + a + ')';
+
+  function readPalette() {
+    const cs = getComputedStyle(document.documentElement);
+    const v = (name, fallback) => (cs.getPropertyValue(name) || '').trim() || fallback;
+    return {
+      p1: v('--p1', '#f5a742'), p2: v('--p2', '#48cfd8'),
+      p1rgb: v('--p1rgb', '245, 167, 66'), p2rgb: v('--p2rgb', '72, 207, 216'),
+      accrgb: v('--accrgb', '120, 169, 255'),
+      /* An empty --winrgb means "wear the winner's colour", which is what Slate does. Paper sets
+         a red pen instead, because that is how the game in the picture was marked. */
+      winrgb: v('--winrgb', ''),
+      /* how the winning five is marked is part of the theme, not of the game: a dark board needs
+         a wide translucent band, a paper one needs a thin solid pen. Numbers, so parsed. */
+      winpen: parseFloat(v('--winpen', '.62')), winink: parseFloat(v('--winink', '.28')),
+      winrange: parseFloat(v('--winrange', '.3')),
+      feltA: v('--felt-a', '#101822'), feltB: v('--felt-b', '#0c1219'),
+      grid: v('--grid', '#232f3d'), star: v('--star', '#31414f'), coord: v('--coord', '#4d5c6d'),
+      mono: (getComputedStyle(document.body).getPropertyValue('--mono') || 'monospace').trim()
+    };
+  }
+
+  function applyTheme() {
+    document.documentElement.dataset.theme = S.theme;
+    PAL = readPalette();
+    dirty = true;
+  }
+
   function drawStone(px, py, player, alpha, scale) {
     const r = cell * 0.36 * (scale || 1);
     ctx.globalAlpha = alpha;
     if (player === A) {
-      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--p1').trim() || '#f5a742';
+      ctx.strokeStyle = PAL.p1;
       ctx.lineWidth = Math.max(2, cell * 0.14);
       ctx.lineCap = 'round';
       ctx.beginPath();
@@ -2007,7 +2163,7 @@ function Match5Engine() {
       ctx.moveTo(px + r, py - r); ctx.lineTo(px - r, py + r);
       ctx.stroke();
     } else {
-      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--p2').trim() || '#48cfd8';
+      ctx.strokeStyle = PAL.p2;
       ctx.lineWidth = Math.max(2, cell * 0.14);
       ctx.beginPath();
       ctx.arc(px, py, r, 0, Math.PI * 2);
@@ -2019,14 +2175,14 @@ function Match5Engine() {
   function draw() {
     const n = S.size, step = cell;
     ctx.clearRect(0, 0, cssSize, cssSize);
-    // felt
+    // felt - or paper: the theme decides what the board is made of
     const g = ctx.createLinearGradient(0, 0, cssSize, cssSize);
-    g.addColorStop(0, '#101822'); g.addColorStop(1, '#0c1219');
+    g.addColorStop(0, PAL.feltA); g.addColorStop(1, PAL.feltB);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, cssSize, cssSize);
 
     // grid
-    ctx.strokeStyle = '#232f3d';
+    ctx.strokeStyle = PAL.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = 0; i <= n; i++) {
@@ -2038,7 +2194,7 @@ function Match5Engine() {
 
     // star points every 5 cells
     if (n >= 13) {
-      ctx.fillStyle = '#31414f';
+      ctx.fillStyle = PAL.star;
       for (let x = 5; x < n; x += 5) for (let y = 5; y < n; y += 5) {
         ctx.fillRect(pad + x * step - 1.5, pad + y * step - 1.5, 3, 3);
       }
@@ -2046,8 +2202,8 @@ function Match5Engine() {
 
     // coordinates
     if (n <= 31) {
-      ctx.fillStyle = '#4d5c6d';
-      ctx.font = '9px ' + (getComputedStyle(document.body).getPropertyValue('--mono') || 'monospace');
+      ctx.fillStyle = PAL.coord;
+      ctx.font = '9px ' + PAL.mono;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       for (let i = 0; i < n; i += (n > 19 ? 5 : 1)) {
         const lbl = String.fromCharCode(97 + i);
@@ -2056,13 +2212,18 @@ function Match5Engine() {
       }
     }
 
-    // win line glow
+    // the winning five, marked the way the theme's pen draws it
     if (S.winLine && S.winLine.length) {
       const a = cellXY(S.winLine[0]), b = cellXY(S.winLine[S.winLine.length - 1]);
       const pulse = 0.55 + 0.45 * Math.sin(tAnim / 320);
       ctx.save();
-      ctx.strokeStyle = S.winner === A ? 'rgba(245,167,66,' + (0.28 + 0.3 * pulse) + ')' : 'rgba(72,207,216,' + (0.28 + 0.3 * pulse) + ')';
-      ctx.lineWidth = Math.max(6, cell * 0.62);
+      /* The winning five wears the winner's colour - unless the theme carries a pen of its own
+         for it, which is what Paper does: one thin red stroke, as in the picture it came from.
+         The width and how solid it is come from the theme too, so the pulse that says "these
+         five" stays the same behaviour while the mark itself stays in the palette. */
+      ctx.strokeStyle = rgbaOf(PAL.winrgb || (S.winner === A ? PAL.p1rgb : PAL.p2rgb),
+        PAL.winink + PAL.winrange * pulse);
+      ctx.lineWidth = Math.max(3, cell * PAL.winpen);
       ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
       ctx.restore();
@@ -2076,7 +2237,7 @@ function Match5Engine() {
       const [x, y] = cellXY(c);
       drawStone(x, y, p, 1, 1);
       if (c === last) {          // keep marking the deciding move after the game ends
-        ctx.strokeStyle = p === A ? 'rgba(245,167,66,.55)' : 'rgba(72,207,216,.55)';
+        ctx.strokeStyle = rgbaOf(p === A ? PAL.p1rgb : PAL.p2rgb, .55);
         ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.arc(x, y, cell * 0.46, 0, Math.PI * 2); ctx.stroke();
       }
@@ -2088,7 +2249,7 @@ function Match5Engine() {
       const pulse = 0.4 + 0.6 * Math.abs(Math.sin(tAnim / 420));
       ctx.save();
       ctx.setLineDash([3, 3]);
-      ctx.strokeStyle = 'rgba(120,169,255,' + pulse + ')';
+      ctx.strokeStyle = rgbaOf(PAL.accrgb, pulse);
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(x, y, cell * 0.42, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
@@ -2132,6 +2293,44 @@ function Match5Engine() {
     else if (k === 'h') hint();
     else if (k === 'escape') { S.hint = -1; dirty = true; }
   });
+
+  /* ---------------- what this computer remembers ----------------
+     Board size, difficulty and board colour are set up once and then forgotten about, so they are
+     kept here and put back before any control is filled in. A game in progress is deliberately
+     not kept: a half-played board with an empty decision log would be a game the page cannot
+     account for. Storage can be refused (private mode, a blocked file origin), and an entry can
+     come from an older build, so nothing read back is trusted before it is checked against the
+     choices actually on offer - a remembered setting must never be able to break the page. */
+  const PREF_KEY = 'match5.prefs.v1';
+
+  const remember = (value, allowed) => (allowed.indexOf(value) >= 0 ? value : null);
+
+  function prefsRead() {
+    try {
+      const raw = localStorage.getItem(PREF_KEY);
+      const p = raw ? JSON.parse(raw) : null;
+      return p && typeof p === 'object' ? p : {};
+    } catch (e) { return {}; }        // storage refused, or a value that is not JSON at all
+  }
+
+  function prefsWrite() {
+    try {
+      localStorage.setItem(PREF_KEY, JSON.stringify({
+        v: 1, size: S.size, level1: S.level1, level2: S.level2, theme: S.theme
+      }));
+    } catch (e) { /* refused: the game plays, it just does not remember this change */ }
+  }
+
+  const saved = prefsRead();
+  const rSize = remember(+saved.size, SIZES);
+  const rTheme = remember(saved.theme, THEMES);
+  const rLevel1 = remember(saved.level1, ENG.LEVEL_ORDER);
+  const rLevel2 = remember(saved.level2, ENG.LEVEL_ORDER);
+  if (rSize !== null) S.size = rSize;
+  if (rTheme !== null) S.theme = rTheme;
+  if (rLevel1 !== null) S.level1 = rLevel1;
+  if (rLevel2 !== null) S.level2 = rLevel2;
+  /* end of remembered settings */
 
   /* ---------------- control wiring ---------------- */
   SIZES.forEach((n) => {
@@ -2180,20 +2379,29 @@ function Match5Engine() {
     }
     ui.speedWrap.style.display = S.mode === 'cvc' ? '' : 'none';
     ui.modeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.mode === S.mode));
+    ui.themeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.theme === S.theme));
   }
 
   ui.modeSeg.addEventListener('click', (ev) => {
     const b = ev.target.closest('button'); if (!b) return;
     S.mode = b.dataset.mode; restart();
   });
-  ui.sizeSel.addEventListener('change', () => { S.size = +ui.sizeSel.value; restart(); });
+  /* A colour change is not a new game: the position, the clock and the log stay exactly as they
+     are, only the drawing changes. */
+  ui.themeSeg.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button');
+    if (!b || !remember(b.dataset.theme, THEMES) || b.dataset.theme === S.theme) return;
+    S.theme = b.dataset.theme;
+    applyTheme(); applyVisibility(); prefsWrite();
+  });
+  ui.sizeSel.addEventListener('change', () => { S.size = +ui.sizeSel.value; prefsWrite(); restart(); });
   ui.sideSel.addEventListener('change', () => { S.humanSide = +ui.sideSel.value; restart(); });
   ui.lvl1Sel.addEventListener('change', () => {
     S.level1 = ui.lvl1Sel.value;
     if (S.mode === 'pvc') { S.level2 = S.level1; ui.lvl2Sel.value = S.level2; }   // the CPU inherits it on either side
-    refresh();
+    prefsWrite(); refresh();
   });
-  ui.lvl2Sel.addEventListener('change', () => { S.level2 = ui.lvl2Sel.value; refresh(); });
+  ui.lvl2Sel.addEventListener('change', () => { S.level2 = ui.lvl2Sel.value; prefsWrite(); refresh(); });
   ui.depthSel.addEventListener('change', () => { S.depth = ui.depthSel.value; settingsPeek(); });
   ui.widthSel.addEventListener('change', () => { S.width = ui.widthSel.value; settingsPeek(); });
   /* The advanced panel is folded away, so the line that is visible has to say what is in force:
@@ -2229,7 +2437,9 @@ function Match5Engine() {
 
   window.addEventListener('resize', layoutBoard);
 
+  applyTheme();           // the palette must exist before the first frame is drawn
   applyVisibility();
+  prefsWrite();           // after the controls agree with the state, so does what is written down
   layoutBoard();
   newGame();
   requestAnimationFrame(loop);

@@ -90,5 +90,62 @@ ok(!/<link\b|<script[^>]+\bsrc=/i.test(html), 'file must not depend on external 
   }
 }
 
+/* ---- theme contract: an alternative palette must redefine every colour the first one defines,
+        the themes the page can select must be the palettes the CSS carries, and a remembered
+        setting must be checked against the choices actually on offer ---- */
+{
+  const css = (html.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];
+  const names = (src) => new Set([...src.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]));
+  const baseSrc = (css.match(/:root\s*\{([\s\S]*?)\}/) || ['', ''])[1];
+  const base = [...names(baseSrc)].filter((v) => !/--(radius|mono|sans)/.test(v));
+  ok(baseSrc.includes('--p1') && baseSrc.includes('--p1rgb') && baseSrc.includes('--felt-a'),
+    'the first palette must define the stone colours, their rgb parts and the board surface');
+
+  const altBlocks = [...css.matchAll(/\[data-theme=([a-z]+)\]\s*\{([\s\S]*?)\}/g)];
+  ok(altBlocks.length >= 1, 'expected at least one alternative [data-theme=...] palette');
+  for (const [, name, body] of altBlocks) {
+    const have = names(body);
+    const missing = base.filter((v) => !have.has(v));
+    ok(missing.length === 0, 'theme "' + name + '" forgets ' + missing.length + ' colour(s): ' + missing.join(', '));
+  }
+
+  const jsThemes = [...((html.match(/const THEMES = \[([^\]]*)\]/) || ['', ''])[1].matchAll(/'([a-z]+)'/g))].map((m) => m[1]);
+  ok(jsThemes.length >= 2, 'the page should offer more than one board colour, found: ' + jsThemes.join(', '));
+  const seg = (html.match(/<div class="seg" id="themeSeg">([\s\S]*?)<\/div>/) || ['', ''])[1];
+  const offered = [...seg.matchAll(/data-theme="([a-z]+)"/g)].map((m) => m[1]);
+  for (const t of jsThemes) {
+    ok(offered.includes(t), 'theme ' + t + ' is listed in THEMES but has no control');
+    if (t !== jsThemes[0]) ok(altBlocks.some((m) => m[1] === t), 'theme ' + t + ' has no palette block');
+  }
+  for (const t of offered) ok(jsThemes.includes(t), 'a control offers theme ' + t + ', which the page does not know');
+
+  const prefs = (html.match(/const PREF_KEY[\s\S]*?end of remembered settings/) || [''])[0];
+  ok(prefs.length > 0, 'could not locate the remembered-settings block');
+  ok((prefs.match(/try \{/g) || []).length >= 2 && (prefs.match(/catch \(/g) || []).length >= 2,
+    'storage must be read and written inside a guard: a refused localStorage cannot break the page');
+  for (const need of [/remember\(\+saved\.size, SIZES\)/, /remember\(saved\.theme, THEMES\)/,
+                      /remember\(saved\.level1, ENG\.LEVEL_ORDER\)/, /remember\(saved\.level2, ENG\.LEVEL_ORDER\)/]) {
+    ok(need.test(prefs), 'a remembered value is not checked against the choices on offer: ' + need);
+  }
+}
+
+/* ---- the decision log reads newest-first: a line goes in at the top and the bounded list is
+        trimmed from the bottom. Nothing else breaks if that quietly reverts to appendChild, so
+        the rule is stated here instead. The list also owns the reader's position, which only
+        works if the browser is not also adjusting it. ---- */
+{
+  const entry = (html.match(/function logEntry\s*\(\s*o\s*\)\s*\{([\s\S]*?)\n  \}/) || ['', ''])[1];
+  ok(entry.length > 0, 'could not locate the logEntry function');
+  ok(/insertBefore\(div, list\.firstChild\)/.test(entry) && !/appendChild\(div\)/.test(entry),
+    'a new decision line must be inserted at the top of the log');
+  ok(/removeChild\(list\.lastChild\)/.test(entry), 'the bounded log must drop the oldest line, not the newest');
+  ok(!/scrollTop = list\.scrollHeight/.test(entry), 'the log must not chase its own bottom any more');
+  ok(/list\.scrollTop \+= div\.offsetHeight \+ \(parseFloat\(getComputedStyle\(list\)\.rowGap\)/.test(entry),
+    'a reader scrolled into older lines must be moved by the row plus the gap above it - the row alone leaves them 6px short on every line');
+  const logCss = (html.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];
+  ok(/\.log \{[^}]*overflow-anchor: none/.test(logCss),
+    'the log list must opt out of browser scroll anchoring, or the reader is moved twice');
+}
+
 console.log(fails ? '\nFAILED ' + fails + ' of ' + checks : '\nPARSE/STRUCTURE OK — ' + checks + ' checks');
 process.exit(fails ? 1 : 0);
