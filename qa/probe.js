@@ -15,6 +15,7 @@
   var hash = (location.hash || '#hard').slice(1);
   if (hash === 'hard') { mode('cvc'); setSel('lvl1Sel', 'hard'); setSel('lvl2Sel', 'medium'); }
   else if (hash === 'fast') { mode('cvc'); setSel('lvl1Sel', 'medium'); setSel('lvl2Sel', 'medium'); }
+  else if (hash === 'expert') { mode('cvc'); setSel('lvl1Sel', 'expert'); setSel('lvl2Sel', 'expert'); }
   else if (hash === 'd0') {
     mode('cvc'); setSel('lvl1Sel', 'medium'); setSel('lvl2Sel', 'medium');
     setSel('depthSel', '0');           // pinned 0 plies: no search at all
@@ -69,10 +70,21 @@
     var h = Math.min(br.bottom, cr.bottom) - Math.max(br.top, cr.top);
     return (w <= 0 || h <= 0) ? 0 : Math.round(w * h);
   }
+  // what the strength menu is actually promising, and how many workers answered the last move
+  function lvlText() {
+    const t = (id) => {
+      var s = q(id);
+      if (!s || s.selectedIndex < 0) return '-';
+      var txt = s.options[s.selectedIndex].textContent.replace(/\s+/g, ' ');
+      return txt + ' (value=' + s.value + ', visible=' + (s.closest('label') ? s.closest('label').style.display !== 'none' : '?') + ')';
+    };
+    return t('lvl1Sel') + ' vs ' + t('lvl2Sel');
+  }
   setInterval(function () {
     box.textContent = 'HASH=' + hash + ' | MOVES=' + q('stMoves').textContent + ' | ' + probeCanvas() +
       ' | DEPTH=' + q('stDepth').textContent + ' | WHY=' + q('stWhy').textContent +
       ' | NODES=' + q('stNodes').textContent + ' | TIME=' + q('stTime').textContent +
+      ' | WORKERS=' + q('stThreads').textContent + ' | LVL=' + lvlText() +
       ' | FOURS=' + q('stFours').textContent + ' | SCORE=' + q('stScore').textContent +
       ' | TURN=' + q('turnTxt').textContent + ' | THINK=' + q('thinkDots').className +
       ' | OVERLAP=' + overlap() +

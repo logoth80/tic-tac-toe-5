@@ -135,8 +135,10 @@ async function main() {
     const last = [...seen].filter(Boolean).pop() || '';
     const f = (k) => { const m = last.match(new RegExp(k + '=([^|]*)')); return m ? m[1].trim() : '-'; };
     console.log('  final: moves=' + f('MOVES') + ' | depth=' + f('DEPTH') + ' | why=' + f('WHY') +
+      ' | workers=' + f('WORKERS') +
       ' | ink=' + ((last.match(/ink=(\d+)/) || [])[1] || '-') +
       ' | panel-over-board=' + f('OVERLAP') + ' px2 | banner=' + f('BANNER'));
+    console.log('  strength menu reads: ' + f('LVL'));
     if (last && f('OVERLAP') !== '0') {
       console.log('  !! VIOLATION: the result panel covers ' + f('OVERLAP') + ' px^2 of the board');
     }
@@ -146,13 +148,20 @@ async function main() {
       console.log('  pacing, latest read-out per move (from move 8 on):');
       for (const [n, t] of late) {
         console.log('   ' + String(n).padStart(3) + '  ' + field(t, 'DEPTH').padEnd(24) +
-          field(t, 'NODES').padEnd(20) + field(t, 'TIME').padEnd(20) + field(t, 'WHY'));
+          field(t, 'NODES').padEnd(20) + field(t, 'TIME').padEnd(20) + field(t, 'WORKERS').padEnd(32) + field(t, 'WHY'));
       }
       const heavy = late.filter(([, t]) => {
         const v = parseInt((field(t, 'NODES').match(/[\d,]+/) || ['0'])[0].replace(/,/g, ''), 10);
         return v > 2000;
       }).length;
       console.log('  late read-outs backed by more than 2,000 nodes: ' + heavy + ' of ' + late.length);
+      /* The level promises cores as well as time: a move answered by a pool must say so, and a
+         move that was not (a pinned depth, a forced tactic, a one-core level) must not. */
+      const split = late.filter(([, t]) => /^\d+ workers/.test(field(t, 'WORKERS')));
+      const solo = late.filter(([, t]) => /^1 · one core/.test(field(t, 'WORKERS')));
+      console.log('  late read-outs answered across a pool: ' + split.length + ' of ' + late.length +
+        ' (single core: ' + solo.length + ')' +
+        (split.length ? '  e.g. ' + (split[0][1].match(/WORKERS=([^|]*)/) || [])[1].trim() : ''));
     }
     console.log('  banner: ' + (banner || '(never shown)'));
     console.log('  read-outs naming a proven forced line: ' + proofKeys.size);
@@ -164,6 +173,9 @@ async function main() {
   ]);
   await run('Look-ahead pinned to 12 plies (the reported case: deep thinking must not collapse)', '#d12', [
     [2000, null], [9000, 'deep-1.png'], [21000, 'deep-late.png'], [46000, 'deep-move24.png']
+  ]);
+  await run('CPU vs CPU, Expert vs Expert (the longest clock, every spare core)', '#expert', [
+    [5000, null], [11000, 'expert-1.png'], [20000, 'expert-late.png']
   ]);
   await run('CPU vs CPU, Hard vs Medium (rich report, worker search)', '#hard', [
     [1500, null], [4000, 'hard-1.png'], [8000, 'hard-3.png']

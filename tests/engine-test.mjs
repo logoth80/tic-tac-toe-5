@@ -212,6 +212,10 @@ console.log('[4] self-play forcing discipline (no missed win, no missed block)')
   const moves = seed.map(([x, y]) => id(S, x, y));
   let violations = 0, missedWin = 0, missedBlock = 0, deepest = 0, maxMs = 0, totalMs = 0, plies = 0;
   const levels = ['hard', 'hard'];
+  /* This section is about forcing discipline, not about speed. Now that a level *is* a clock,
+     the loop runs on a pinned budget (same cost as the old Hard) and the promise the level
+     makes about its own clock is checked separately, once, against the shipped number. */
+  const PLAY = { maxDepth: 6, minDepth: 2, timeMs: 700, timeMsSet: true };
   while (!g.winner() && !g.isFull() && plies < 30) {
     const player = g.turn(), other = player === A ? B : A;
     const legal = g.legalMoves(player);
@@ -221,7 +225,7 @@ console.log('[4] self-play forcing discipline (no missed win, no missed block)')
     const liveMine = new Set(g.threatCells(player)), liveTheirs = new Set(g.threatCells(other));
     ok(mine.length === liveMine.size && mine.every(c => liveMine.has(c)), 'threatCells(player) != wouldWin at ply ' + plies);
     ok(theirs.length === liveTheirs.size && theirs.every(c => liveTheirs.has(c)), 'threatCells(other) != wouldWin at ply ' + plies);
-    const r = g.search(player, levels[plies % 2], {});
+    const r = g.search(player, levels[plies % 2], PLAY);
     plies++;
     deepest = Math.max(deepest, r.depth); maxMs = Math.max(maxMs, r.ms); totalMs += r.ms;
     ok(g.board[r.cell] === 0, 'engine picked an occupied cell');
@@ -232,7 +236,22 @@ console.log('[4] self-play forcing discipline (no missed win, no missed block)')
   console.log('  plies: ' + plies + ', deepest reached: ' + deepest + ', avg ms: ' + Math.round(totalMs / Math.max(1, plies)) + ', max ms: ' + maxMs);
   ok(violations === 0, violations + ' forcing violations (missed win ' + missedWin + ', missed block ' + missedBlock + ')');
   ok(deepest >= 3, 'search only reached depth ' + deepest + ' (expected >= 3 for hard)');
-  ok(maxMs < 1600, 'a single move took ' + maxMs + ' ms (time budget not respected)');
+  ok(maxMs < PLAY.timeMs * 1.25 + 200, 'a single move took ' + maxMs + ' ms against a pinned ' + PLAY.timeMs + ' ms budget');
+  /* A level is a clock now, so the clock is exactly what deserves a gate: a move at the shipped
+     level must not blow past its promise, and it must really spend what it was given. */
+  {
+    const lv = ENG.LEVELS.hard;
+    const g2 = ENG.createGame({ size: S, win: 5 });
+    // three stones far apart: nothing is forcing, so this is a search and not a tactic shortcut
+    for (const [x, y] of [[4, 4], [S - 4, S - 4], [4, S - 4]]) g2.play(id(S, x, y));
+    const r2 = g2.search(g2.turn(), 'hard', {});
+    ok(r2.forced === 'search', 'a quiet position was answered by a tactic shortcut: ' + r2.forced);
+    ok(r2.width === lv.branch, lv.label + ' did not use its full move width: ' + r2.width + ' vs ' + lv.branch);
+    ok(r2.ms < lv.timeMs * 1.2 + 300, lv.label + ' took ' + r2.ms + ' ms, over its ' + lv.timeMs + ' ms promise');
+    ok(r2.nodes > 5000, lv.label + ' barely searched: ' + r2.nodes + ' nodes in ' + r2.ms + ' ms');
+    console.log('  shipped ' + lv.label + ' : ' + r2.ms + ' ms  ' + r2.nodes.toLocaleString('en-US') +
+      ' nodes  depth ' + r2.depth + '  width ' + r2.width);
+  }
   const ref = brute(S);
   ok(ref.winner(g.board) === g.winner(), 'winner detection disagrees with brute force');
   const line = g.findWin();
@@ -293,6 +312,23 @@ console.log('[5] look-ahead depth and performance by level (25x25 midgame)');
     ok(r.ms < ENG.LEVELS[lv].timeMs + 600, lv + ' overshot its time budget: ' + r.ms + ' ms');
   }
   if (quiet && !mate) ok(deepestLevel >= 6, 'quiet position: search never went deeper than ' + deepestLevel);
+  /* The ladder must actually be a ladder. This is a property of the shipped table, not of how
+     fast this machine happens to be, so it is checked against the table: more clock at every
+     step, never a lower ceiling, and the same move width throughout - a level is a clock, and
+     at most a depth ceiling, never a hidden change of width. */
+  {
+    let prevMs = 0, prevCap = 0, width = 0;
+    for (const lv of ENG.LEVEL_ORDER) {
+      const c = ENG.LEVELS[lv];
+      ok(c.timeMs > prevMs, lv + ' is not given more clock than the level below it');
+      ok(c.maxDepth >= prevCap, lv + ' caps its depth below the level below it');
+      if (!width) width = c.branch; else ok(c.branch === width, lv + ' changes the move width away from ' + width);
+      prevMs = c.timeMs; prevCap = c.maxDepth;
+    }
+    ok(width >= 16, 'the widest move choice any level uses is only ' + width);
+    console.log('  ladder: clocks ' + ENG.LEVEL_ORDER.map((lv) => ENG.LEVELS[lv].timeMs + 'ms').join(' < ') +
+      '  ceilings ' + ENG.LEVEL_ORDER.map((lv) => ENG.LEVELS[lv].maxDepth).join('/') + '  width ' + width);
+  }
   // explicit deep override
   const r = g.search(who, 'hard', { maxDepth: 12, timeMs: 3000, branch: 16 });
   console.log('  forced deep override -> depth ' + r.depth + ', ' + r.nodes.toLocaleString('en-US') + ' nodes, ' + r.ms + ' ms, score ' + r.score.toExponential(2));
@@ -333,20 +369,28 @@ console.log('[7] strength ladder (13x13, colours swapped per pairing)');
 {
   const S = 13;
   const pairings = [
-    // Bars from tests/ladder-sample.mjs over 8-game shipped samples, not from hope:
-    //   hard vs medium  8/8 pure (twice), 7/8 and 5/6 shipped
-    //   hard vs easy    8/8 pure (twice), 7/8 and 8/8 shipped
-    //   medium vs easy  3/6 pure, 5/6 to 3/4 shipped
-    // A 13x13 endgame is a four-race melee: the shallower level wins about one game in eight,
-    // and a one-ply edge (medium vs easy) flips often enough that the honest bar there is
-    // "not a majority of losses". Wide gaps and pure search are gated strictly; the tactical
-    // guarantees that do not depend on luck live in [2], [4], [9] and [10].
-    // The variety dice are pinned per game (cfg.entropy) so a game replays identically.
+    /* Measured at the clocks below (the shipped clock ratios, at a third of the shipped budgets):
+         hard vs medium    2/2 pure, 2/4 shipped  - the same 2/4 at two different clock scales
+         medium vs easy    3.5/4 shipped
+         hard vs easy      4/4 shipped
+       A 13x13 endgame is a four-race melee, and a factor-of-two clock gap does not convert into
+       wins there; that is a property of the board, not of the search, which is why this section
+       only demands that a wide gap not lose a majority of its games and that a narrow one not lose
+       more than it wins. What the clock really buys is measured directly, in depth and nodes, in [5];
+     the guarantees that do not depend on luck at all live in [2], [4], [9] and [10].
+     The variety dice are pinned per game (cfg.entropy) so a game replays identically. */
     { strong: 'hard', weak: 'medium', pure: 1.5, shipped: 2.0 },
     { strong: 'medium', weak: 'easy', pure: 0, shipped: 2.0 },
     { strong: 'hard', weak: 'easy', pure: 0, shipped: 3.0 }
   ];
   for (const { strong: strongLevel, weak: weakLevel, pure: pureNeed, shipped: shippedNeed } of pairings) {
+    /* A level is a clock, so the ladder runs the shipped ratios at a fraction of the shipped
+       budgets: what makes one level stronger is the ratio between the clocks and the ceiling on
+       plies, not their size. A third is chosen because it lands on the same absolute clocks the
+       older fixed budgets used (about 165/495/990 ms), so the section costs what it always cost.
+       The outcome is not an artifact of that choice: the same 2/4 against Medium appeared at a
+       sixth of the clocks too, which is why the pairing's bar is a floor rather than a target. */
+    const CLOCK = (lv) => Math.max(120, Math.round(ENG.LEVELS[lv].timeMs * 0.33));
     const passes = [];
     if (pureNeed > 0) {
       passes.push({ name: 'pure search', ov: { tieChance: 0 }, need: pureNeed,
@@ -366,7 +410,7 @@ console.log('[7] strength ladder (13x13, colours swapped per pairing)');
         let plies = 0;
         while (!g.winner() && !g.isFull() && plies < 60) {
           const p = g.turn();
-          const r = g.search(p, lvOf(p), ov);
+          const r = g.search(p, lvOf(p), Object.assign({}, ov, { timeMs: CLOCK(lvOf(p)), timeMsSet: true }));
           if (r.cell < 0) break;
           g.play(r.cell);
           plies++;
@@ -614,6 +658,125 @@ console.log('[10] proof handling: forced win stops short, forced loss resists');
     : 'no five within 24 plies') + '  winner=' + gp.winner());
   ok(gp.winner() !== 0, 'the proven line never produced a five on the board');
   ok(plies === pr.mate, 'the engine promised the five after ' + pr.mate + ' half-moves; the board took ' + plies);
+}
+
+/* ---------- 11. splitting the root must not change the answer ---------- */
+console.log('[11] split search agrees with a single search');
+{
+  /* The page may answer a move by handing the root squares to several workers and merging the
+     parts. That is only honest if a split answer *is* the single answer: the same value, the
+     same proof, the same distance, and the same restricted roots. Each part is measured by a
+     fresh game replayed from the same moves, exactly as a worker does. */
+  const S = 25;
+  const seed = [[5,5],[19,19],[5,19],[19,5],[12,12],[12,13],[11,12],[13,12],[10,11],[14,13],
+                [8,8],[16,16],[7,9],[17,15],[6,14],[18,10]];
+  const moves = seed.map(([x, y]) => id(S, x, y));
+  const g = mk(S, moves);
+
+  for (const depth of [2, 3, 4]) {
+    const cfg = { maxDepth: depth, minDepth: depth, timeMs: 30000, timeMsSet: true, tieChance: 0, branch: 8, rootBranch: 12 };
+    const full = g.search(A, 'hard', cfg);
+    const plan = g.rootPlan(A, 'hard', cfg);
+    ok(!plan.done && !plan.opening, 'd' + depth + ': rootPlan refused a quiet position');
+    const legal = g.legalMoves(A).length;
+    ok(plan.cells.length === Math.min(Math.max(6, cfg.rootBranch), legal),
+      'd' + depth + ': rootPlan offered ' + plan.cells.length + ', expected ' + Math.min(Math.max(6, cfg.rootBranch), legal) + ' of ' + legal + ' legal');
+    ok(full.cand === plan.cells.length, 'd' + depth + ': search considered ' + full.cand + ' squares but rootPlan offered ' + plan.cells.length);
+    ok(full.depth === depth, 'd' + depth + ': full search stopped at depth ' + full.depth);
+
+    for (const n of [2, 3, 5]) {
+      const groups = Array.from({ length: n }, () => []);
+      plan.cells.forEach((c, i) => groups[i % n].push(c));   // the same round-robin dealing the page uses
+      const parts = groups.filter((x) => x.length)
+        .map((grp) => mk(S, moves).rootSearch(A, 'hard', cfg, grp, depth));
+      const m = g.mergeParts(parts);
+      const seen = parts.reduce((s, p) => s + p.table.length, 0);
+      ok(seen === plan.cells.length, 'd' + depth + '/' + n + ': the parts measured ' + seen + ' of ' + plan.cells.length + ' squares');
+      ok(parts.every((p) => !p.aborted), 'd' + depth + '/' + n + ': a part was cut off by its clock');
+      ok(m.bestCell === full.cell, 'd' + depth + '/' + n + ': split best ' + nm(S, m.bestCell) + ' where a single search chose ' + nm(S, full.cell));
+      ok(Math.abs(m.bestScore - full.score) < 1e-9, 'd' + depth + '/' + n + ': split value ' + m.bestScore + ' vs single ' + full.score);
+      ok(m.proof === '', 'd' + depth + '/' + n + ': a quiet position reported a proof: ' + m.proof);
+      if (n === 3) console.log('  d' + depth + ' across ' + n + ' parts: best ' + nm(S, m.bestCell) + '  value ' + full.score.toExponential(2) +
+        '  measured ' + seen + '  exact ' + m.values.filter((v) => v.exact).length);
+    }
+  }
+
+  /* A proven line must survive the split. The *move* may differ from the single search's when
+     several moves win in the same number of half-moves - the engine keeps the first it measured,
+     and a different partition measures in a different order. What has to agree is the value, the
+     proof and the distance to the five, because that is what the report tells the player. */
+  {
+    const S2 = 19;
+    const fixture = [[1,1],[10,10],[3,4],[11,10],[5,7],[12,10],[7,2],[14,6],[9,3],[15,7],[11,1],[16,8]]
+      .map(([x, y]) => id(S2, x, y));
+    const gg = mk(S2, fixture);
+    const cfg = { maxDepth: 6, minDepth: 2, timeMs: 4000, timeMsSet: true, tieChance: 0 };
+    const single = gg.search(B, 'hard', cfg);
+    const plan = gg.rootPlan(B, 'hard', cfg);
+    const groups = Array.from({ length: 4 }, () => []);
+    plan.cells.forEach((c, i) => groups[i % 4].push(c));
+    const parts = groups.filter((x) => x.length)
+      .map((grp) => mk(S2, fixture).rootSearch(B, 'hard', cfg, grp, single.depth));
+    const m = gg.mergeParts(parts);
+    console.log('  proven line: single depth ' + single.depth + ' mate ' + single.mate + ' "' + single.stop + '"' +
+      '  -> split proof ' + m.proof + ' mate ' + gg.mateOf(m.bestScore) + ' across ' + parts.length + ' parts');
+    ok(m.proof === 'win' || m.proof === 'loss', 'a proven position was not proven once split');
+    ok(Math.abs(m.bestScore - single.score) < 1e-9, 'the split value disagrees with a single search: ' + m.bestScore + ' vs ' + single.score);
+    ok(gg.mateOf(m.bestScore) === single.mate, 'the split distance to the five differs: ' + gg.mateOf(m.bestScore) + ' vs ' + single.mate);
+  }
+
+  /* Tactics come from one place: rootPlan answers exactly what search answers, and a root the
+     engine restricted to one square stays restricted however the parts are dealt. */
+  {
+    const S3 = 13;
+    const cells = [[7,4],[11,4],[8,4],[6,2],[9,4],[7,2],[10,4]].map(([x, y]) => id(S3, x, y));
+    const g3 = mk(S3, cells);                       // four in a row, one end blocked: B must answer
+    const only = id(S3, 6, 4);
+    ok(g3.wouldWin(only, A) && !g3.wouldWin(id(S3, 10, 4), A), 'the fixture does not leave exactly one five-completion');
+    const plan = g3.rootPlan(B, 'hard', {});
+    ok(!plan.done && plan.note === 'must block the five',
+      'rootPlan missed the forced block: ' + JSON.stringify((plan.done && plan.done.forced) || plan.note));
+    ok(plan.cells.length === 1 && plan.cells[0] === only, 'the forced block was offered as ' + plan.cells.length + ' squares');
+    const sB = g3.search(B, 'hard', { maxDepth: 1, timeMs: 50, timeMsSet: true });
+    ok(sB.forced === 'must block the five' && sB.cell === only,
+      'search answered the same block differently: ' + sB.forced + ' ' + nm(S3, sB.cell));
+    const DEEP = { maxDepth: 2, minDepth: 2, timeMs: 2000, timeMsSet: true };
+    const merged = g3.mergeParts([
+      mk(S3, cells).rootSearch(B, 'hard', DEEP, [only], 2),
+      mk(S3, cells).rootSearch(B, 'hard', DEEP, [], 2)
+    ]);
+    ok(merged.bestCell === only, 'a restricted root measured a different square: ' + nm(S3, merged.bestCell));
+    ok(merged.values.length === 1, 'a restricted root measured ' + merged.values.length + ' squares');
+    const g5 = mk(S3, cells.concat([id(S3, 2, 2)]));   // now A to move, with the five on the board
+    const plan5 = g5.rootPlan(A, 'hard', {});
+    ok(plan5.done && plan5.done.forced === 'completes five now', 'rootPlan did not see the obvious five');
+    const s5 = g5.search(A, 'hard', {});
+    ok(s5.cell === plan5.done.cell && s5.forced === plan5.done.forced, 'rootPlan and search disagree about a certain answer');
+  }
+
+  /* Variety across parts: "almost as good" may only be said about a square some worker actually
+     measured. A square that was cut off has a value that is a wall, not an estimate. */
+  {
+    const g4 = mk(S, moves.slice(0, 12));
+    const a1 = id(S, 12, 11), a2 = id(S, 12, 14), a3 = id(S, 13, 14);
+    const scoreOf = new Map([[a1, 5000], [a2, 4900], [a3, 4900]]);
+    const exact = new Set([a1, a2]);
+    const order = [a1, a2, a3];
+    // soften() takes the cfg as beginSearch left it, softMargin included: that is the page's contract
+    const cfg = { tieChance: 1, tieMargin: 4000, softMargin: 4000, maxDepth: 2, minDepth: 2, timeMs: 5000, timeMsSet: true };
+    const picked = new Set();
+    let softened = 0;
+    for (let i = 0; i < 40; i++) {
+      g4.search(A, 'hard', { maxDepth: 0, minDepth: 0, timeMs: 1, timeMsSet: true, entropy: 0x1000 + i * 7919 });
+      const r = g4.soften(order, exact, scoreOf, a1, 5000, cfg);
+      if (r.soft) softened++;
+      picked.add(r.cell);
+    }
+    console.log('  variety across parts: ' + softened + '/40 deviated, distinct picks ' + picked.size);
+    ok(!picked.has(a3), 'a square that was never measured was offered as "almost as good"');
+    ok(picked.has(a2), 'a measured near-tie was never taken across 40 rolls');
+    ok(softened > 5 && softened < 40, 'variety across parts is either off or total: ' + softened + '/40');
+  }
 }
 
 console.log('\n' + (fails ? 'FAILED ' + fails + ' of ' + checks + ' checks' : 'ALL PASS — ' + checks + ' checks'));

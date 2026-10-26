@@ -169,10 +169,10 @@
             </label>
           </div>
           <div class="row">
-            <label class="f" id="lvl1Wrap">Engine X
+            <label class="f" id="lvl1Wrap"><span id="lvl1Label">Engine X</span>
               <select id="lvl1Sel"></select>
             </label>
-            <label class="f" id="lvl2Wrap">Engine O
+            <label class="f" id="lvl2Wrap"><span id="lvl2Label">Engine O</span>
               <select id="lvl2Sel"></select>
             </label>
           </div>
@@ -224,27 +224,27 @@
                 <option value="6">6 plies</option>
                 <option value="8">8 plies</option>
                 <option value="12">12 plies</option>
+                <option value="16">16 plies (as deep as Expert is allowed)</option>
               </select>
             </label>
             <label class="f">Move width
               <select id="widthSel">
                 <option value="auto">Auto (by level)</option>
-                <option value="8">8 — fewest, reaches most plies</option>
+                <option value="8">8 — fewest, buys more plies in the same clock</option>
                 <option value="12">12 — middle</option>
-                <option value="20">20 — most, fewest plies</option>
+                <option value="20">20 — widest, what every level uses</option>
               </select>
             </label>
           </div>
-          <p class="cap">Look-ahead = plies searched (0 skips the search and ranks moves by the lines they
-            open and close right now; 1 scores only my own move). Pinning more plies than the level's own
-            setting also lengthens the clock, so the deeper choice gets the time it needs. Move width = how
-            many candidate cells are examined at each position for the same time: fewer candidates buy more
-            plies. Making a five, and answering two open five squares, settle without searching — there is
-            nothing left to decide. A search also stops short once it has proven the outcome; the report
-            then says so and counts the moves that are left before the five.</p>
+          <p class="cap">The menu above states each level's clock, its ceiling on plies and the cores it will
+            use. Pinning a look-ahead or a width here overrides that part, and pinning more plies than the
+            level's own lengthens its clock so the deeper choice gets the time it needs; sliding more time onto
+            a short level gets it the cores the longer level would use. Making a five, and answering a single
+            open five square, settle without searching; a search that proves the outcome stops early and the
+            report counts the moves left before the five.</p>
           <div class="row">
-            <label class="f" style="flex:1 1 100%">Time budget <span id="timeVal">level default</span>
-              <input type="range" id="timeSel" min="0" max="6000" step="100" value="0">
+            <label class="f" style="flex:1 1 100%">Time per move <span id="timeVal">level default</span>
+              <input type="range" id="timeSel" min="0" max="10000" step="100" value="0">
             </label>
           </div>
           <div class="pillrow">
@@ -252,7 +252,7 @@
             <span class="pill" id="pExt">four-threat extension: +1 ply</span>
             <span class="pill" id="pTT">transposition table</span>
           </div>
-          <p class="cap" id="searchCap">No search yet — the level decides both settings.</p>
+          <p class="cap" id="searchCap">No search yet — the level decides the clock, the depth and the cores.</p>
         </div>
       </div>
 
@@ -264,6 +264,7 @@
             <dt>decision</dt><dd id="stWhy">—</dd>
             <dt>positions</dt><dd id="stNodes">—</dd>
             <dt>time</dt><dd id="stTime">—</dd>
+            <dt>search workers</dt><dd id="stThreads">—</dd>
             <dt>static score (X−O)</dt><dd id="stScore">—</dd>
             <dt>fours X / O</dt><dd id="stFours">—</dd>
             <dt>moves played</dt><dd id="stMoves">0</dd>
@@ -285,8 +286,10 @@
           searches with alpha–beta pruning, a transposition table and forced-threat extensions.
           Every cell that would complete a five is tracked incrementally, so a win is always taken and an
           enemy five is never ignored. Look-ahead is iterative: it always finishes the minimum depth and opens
-          a deeper pass only when the projected cost fits the clock — measured on a 25×25 midgame that is
-          <b>6 plies</b> deep on Hard (&asymp;0.4&nbsp;s) and <b>7 plies</b> deep on Expert (&asymp;1.3&nbsp;s).
+          a deeper pass only when the projected cost fits the clock. A level <i>is</i> a clock —
+          <b>0.5&nbsp;s, 1.5&nbsp;s, 3&nbsp;s, 6&nbsp;s</b> — and that time is spent across cores: each worker
+          searches different first moves of the same position to the same depth and the parts are merged, which
+          is what turns extra time into extra plies. The report says how many of them answered.
           If several moves come back almost equal, the engine sometimes plays one of them instead of the top
           move (better ones stay likelier), and the first move is drawn at random from the central block, so
           games differ from the start. A proven win or loss is never randomised.
@@ -319,11 +322,18 @@ function Match5Engine() {
      tieMargin of the best one is "almost as good", and with probability tieChance one of
      them is picked instead of the top move (weighted towards the better ones).
      A proven win or loss is never randomised - a proof is taken. */
+  /* A level is a clock, not a secret recipe: it says how long the engine may think, and inside
+     that budget the engine uses everything it has - the widest move choice and the deepest
+     search the time allows. Strength that is a number of milliseconds is also a promise the
+     report can keep: "3000 ms" means the same thing to the player as the panel says.
+     Only the three weaker levels hold anything back, and what they hold back is depth, because
+     an "Easy" that gets 9 plies on a fast machine is not Easy. `threads` is how many search
+     workers a level may use; 0 means every core but one. */
   const LEVELS = {
-    easy:   { label: 'Easy',   maxDepth: 2,  minDepth: 1, timeMs: 150,  branch: 6,  rootBranch: 14, tieMargin: 1400, tieChance: 0.60 },
-    medium: { label: 'Medium', maxDepth: 3,  minDepth: 2, timeMs: 450,  branch: 8,  rootBranch: 18, tieMargin: 240,  tieChance: 0.45 },
-    hard:   { label: 'Hard',   maxDepth: 6,  minDepth: 2, timeMs: 900,  branch: 10, rootBranch: 22, tieMargin: 110,  tieChance: 0.34 },
-    expert: { label: 'Expert', maxDepth: 9,  minDepth: 2, timeMs: 2400, branch: 8,  rootBranch: 26, tieMargin: 45,   tieChance: 0.22 }
+    easy:   { label: 'Easy',   maxDepth: 4,  minDepth: 1, timeMs: 500,  branch: 20, rootBranch: 26, threads: 1, tieMargin: 1400, tieChance: 0.60 },
+    medium: { label: 'Medium', maxDepth: 6,  minDepth: 2, timeMs: 1500, branch: 20, rootBranch: 30, threads: 2, tieMargin: 240,  tieChance: 0.45 },
+    hard:   { label: 'Hard',   maxDepth: 10, minDepth: 2, timeMs: 3000, branch: 20, rootBranch: 34, threads: 4, tieMargin: 110,  tieChance: 0.34 },
+    expert: { label: 'Expert', maxDepth: 16, minDepth: 2, timeMs: 6000, branch: 20, rootBranch: 40, threads: 0, tieMargin: 45,  tieChance: 0.22 }
   };
   const LEVEL_ORDER = ['easy', 'medium', 'hard', 'expert'];
 
@@ -758,22 +768,42 @@ function Match5Engine() {
       return best;
     }
 
-    function search(player, level, override) {
+    /* ---------- pieces shared by one search and by a search split across cores ----------
+       The page can hand parts of one root list to several workers and merge what comes back.
+       That is only sound if every worker configures, orders, measures and cuts off exactly the
+       way a single search does, so those pieces are written once here and both routes use them. */
+    const otherOf = (p) => (p === A ? B : A);
+    const bestOf = (list, player) => {
+      const other = otherOf(player);
+      let bc = list[0], bs = -Infinity;
+      for (const c of list) { const sc = deltaPlace(c, player) + deltaPlace(c, other); if (sc > bs) { bs = sc; bc = c; } }
+      return bc;
+    };
+    const info = (cells, sc, player) => {
+      const other = otherOf(player);
+      return cells.map((c) => ({ cell: c, score: sc, atk: deltaPlace(c, player), def: deltaPlace(c, other) }));
+    };
+
+    /* One place decides what a search may do: its clock, its width, how deep it may go, how
+       wide a tie still counts as "almost as good". A level is a clock - inside that budget the
+       engine uses the deepest search and the widest choice of moves it can afford. */
+    function beginSearch(player, level, override) {
       const base = LEVELS[level] || LEVELS.hard;
       const cfg = Object.assign({}, base, override || {});
-      const maxDepth = Math.max(0, cfg.maxDepth | 0);
-      const minDepth = Math.max(0, Math.min(cfg.minDepth | 0, maxDepth));
+      cfg.maxDepth = Math.max(0, cfg.maxDepth | 0);
+      cfg.minDepth = Math.max(0, Math.min(cfg.minDepth | 0, cfg.maxDepth));
       budget = cfg.timeMs | 0;
-      /* Asking for more plies than this level's own setting is a deliberate request for
-         deeper thought, so the clock grows with the request - unless a time was asked for
-         directly, which always wins. */
-      if (!cfg.timeMsSet && maxDepth > base.maxDepth) {
+      /* Asking for more plies than this level's own ceiling is a deliberate request for deeper
+         thought, so the clock grows with the request - unless a time was asked for directly,
+         which always wins. */
+      if (!cfg.timeMsSet && cfg.maxDepth > (base.maxDepth | 0)) {
         const byPly = [0, 0, 0, 0, 0, 0, 0, 1300, 1800, 2400, 3000, 3400, 3800];
-        const want = byPly[Math.min(maxDepth, byPly.length - 1)] || 0;
+        const want = byPly[Math.min(cfg.maxDepth, byPly.length - 1)] || 0;
         if (want > budget) budget = want;
       }
       branch = Math.max(4, cfg.branch | 0);
-      maxPly = Math.max(6, maxDepth + 6);
+      maxPly = Math.max(6, cfg.maxDepth + 6);
+      cfg.budget = budget;   // what the clock really resolved to, so a split search can budget its parts
       nodes = 0; aborted = false; softMode = true;
       entropy = (entropy + 0x6D2B79F5) >>> 0;
       /* cfg.entropy pins the variety dice, which makes a whole self-play game reproducible.
@@ -782,16 +812,128 @@ function Match5Engine() {
       if (cfg.entropy !== undefined && cfg.entropy !== null) entropy = (cfg.entropy | 0) >>> 0;
       tt = new Map();
       t0 = clock();
+      /* How far a move may trail the best one and still count as "almost as good". Zero
+         whenever variety is off, which keeps the root cut-off at its normal tight width. */
+      cfg.softMargin = (cfg.tieChance > 0 && cfg.tieMargin > 0) ? (cfg.tieMargin | 0) : 0;
+      return cfg;
+    }
 
-      const other = player === A ? B : A;
-      const bestOf = (list) => {
-        let bc = list[0], bs = -Infinity;
-        for (const c of list) { const sc = deltaPlace(c, player) + deltaPlace(c, other); if (sc > bs) { bs = sc; bc = c; } }
-        return bc;
-      };
-      const info = (cells, sc) => cells.map((c) => ({
-        cell: c, score: sc, atk: deltaPlace(c, player), def: deltaPlace(c, other)
-      }));
+    /* Certain answers, settled without searching: make our own five; if the enemy has two
+       different squares that make a five, one move cannot answer both, and our own five was
+       ruled out above. Shared by a single search and a split one - a proof never needs a second
+       opinion. Returns { done } for a final answer, or { cells, note } when the block is forced
+       but searching it is still the honest thing to do. */
+    function tacticOf(player, cfg) {
+      const maxDepth = cfg.maxDepth;
+      const tacticDepth = maxDepth === 0 ? 0 : 1;
+      const myThreats = [], foeThreats = [];
+      const myT = player === A ? thrA : thrB, foeT = player === A ? thrB : thrA;
+      for (let i = 0; i < thrCells.length; i++) {
+        const c = thrCells[i];
+        if (board[c] !== EMPTY) continue;
+        if (myT[c] > 0 && myThreats.indexOf(c) < 0) myThreats.push(c);
+        if (foeT[c] > 0 && foeThreats.indexOf(c) < 0) foeThreats.push(c);   // distinct squares only
+      }
+      if (myThreats.length) {
+        const c = bestOf(myThreats, player);
+        return { done: { cell: c, score: WINVAL, depth: tacticDepth, target: maxDepth, nodes: 0, ms: 0, tt: 0,
+                aborted: false, forced: 'completes five now', root: info([c].concat(myThreats.filter((x) => x !== c)), WINVAL, player) } };
+      }
+      if (foeThreats.length) {
+        const c = bestOf(foeThreats, player);
+        if (foeThreats.length > 1) {
+          /* Two different squares complete a five for them. One move can only occupy one of
+             them, the other still wins next move, so this is a real loss and burning the clock
+             to re-prove it would be a lie of omission rather than insight. */
+          return { done: { cell: c, score: -WINVAL + 2, depth: tacticDepth, target: maxDepth, nodes: 0, ms: 0, tt: 0, aborted: false,
+                   forced: 'double threat - already lost', root: info(foeThreats, -WINVAL + 2, player) } };
+        }
+        if (maxDepth < 2) {
+          place(c, player); const rescue = evalFor(player); unplace(c, player);
+          return { done: { cell: c, score: rescue, depth: tacticDepth, target: maxDepth, nodes: 0, ms: 0, tt: 0, aborted: false,
+                   forced: 'must block the five', root: info(foeThreats, rescue, player) } };
+        }
+        /* The block is forced, but searching it is still worth the time: the score then says
+           whether the rescue holds instead of announcing a loss that blocking has removed,
+           and a deeper reply is measured like any other move. */
+        return { cells: foeThreats.slice(), note: 'must block the five' };
+      }
+      return null;
+    }
+
+    /* The squares a search would look at, in the order it would try them - the same candidate
+       set, the same ranking, the same cap. A split search partitions exactly this list, so the
+       parts add up to the whole root. */
+    function rootOrder(player, cfg) {
+      return rankMoves(globalCandidates(player), player, Math.max(6, cfg.rootBranch | 0), -1);
+    }
+
+    /* One pass over the root at depth d: measure every square against the running best.
+       The child window is widened by the tie margin. A move that fails high through that
+       wider gate is provably more than a margin behind, so it is out of the "almost as good"
+       band either way; a move that does not fail high comes back as an exact value. The band
+       is then measured rather than guessed, and with variety off the margin is 0 so the root
+       window is exactly the usual tight one. Identical in both routes, which is what makes
+       values measured in different workers comparable with each other. */
+    function runPass(player, list, d, alpha, softMargin, scoreOf) {
+      const other = otherOf(player);
+      let iterBest = null;
+      const passExact = new Set();
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        const floor = alpha;
+        place(c, player);
+        let sc;
+        if (fiveA > 0 || fiveB > 0) sc = WINVAL - 1;   // this root move is half-move 1
+        else if (d === 0) sc = deltaPlace(c, player) + deltaPlace(c, other);   // no look-ahead: local value only
+        else if (d >= 2) sc = -negamax(d - 1, -Infinity, -(alpha - softMargin), other, 1);
+        else sc = evalFor(player);
+        unplace(c, player);
+        if (aborted) break;
+        scoreOf.set(c, sc);
+        if (d <= 1 || sc > floor - softMargin) passExact.add(c);   // measured inside the window
+        if (sc > alpha) { alpha = sc; iterBest = { cell: c, score: sc }; }
+      }
+      return { alpha, iterBest, exact: passExact };
+    }
+
+    /* Near-ties: the search often rates several root moves as effectively equal, and always
+       taking the top one makes every game identical. Take one of the moves that were actually
+       *measured* within tieMargin of the best - a move that was only cut off never qualifies -
+       weighted so the better ones stay the likely picks. A proven win or loss is never
+       varied: a proof is taken. One rule, used by a single search and by a merged one. */
+    function softPick(list, exact, scoreOf, bestCell, bestScore, cfg) {
+      if (cfg.tieChance > 0 && list.length > 1 &&
+          bestScore < WINVAL - 1000 && bestScore > -(WINVAL - 1000)) {
+        const margin = cfg.softMargin;
+        const val = (c) => { const v = scoreOf.get(c); return v === undefined ? -Infinity : v; };
+        const band = list.filter((c) => exact.has(c) && val(c) >= bestScore - margin);
+        if (band.length > 1 && rng((entropy ^ h1 ^ Math.imul(nodes + 7, 2654435761)) >>> 0)() < cfg.tieChance) {
+          const roll = rng((entropy ^ h2 ^ Math.imul(nodes + 11, 40503)) >>> 0)();
+          const total = band.length * (band.length + 1) / 2;   // triangular weights: best move stays likeliest
+          let k = roll * total, pick = band[0];
+          for (let i = 0; i < band.length; i++) {
+            k -= (band.length - i);
+            if (k <= 0) { pick = band[i]; break; }
+          }
+          if (pick !== bestCell) return { cell: pick, soft: true };
+        }
+      }
+      return { cell: bestCell, soft: false };
+    }
+
+    /* Half-moves from the searched position to the five, when the line is proven; 0 otherwise.
+       Proven scores live in a band just under WINVAL and count down by half-move, so the page
+       can say "my five in N moves" and mean it. */
+    function mateOf(score) {
+      return (score >= WINVAL - 1000 || score <= -(WINVAL - 1000))
+        ? Math.round(WINVAL - Math.abs(score)) : 0;
+    }
+
+    function search(player, level, override) {
+      const cfg = beginSearch(player, level, override);
+      const maxDepth = cfg.maxDepth, minDepth = cfg.minDepth;
+      const other = otherOf(player);
 
       /* An empty board is fully symmetric: no opening move is better than another central
          one, so vary it instead of always playing the same game. Random cell inside a
@@ -806,50 +948,13 @@ function Match5Engine() {
         const c = open[(rng((entropy ^ h1 ^ h2) >>> 0)() * open.length) | 0];
         return { cell: c, score: 0, depth: 0, target: maxDepth, nodes: 0, ms: 0, tt: 0,
                  aborted: false, forced: 'opening variation', cand: open.length, width: branch,
-                 root: info([c], 0) };
+                 root: info([c], 0, player) };
       }
 
-      /* forced tactics first: complete our own five, otherwise occupy the enemy five.
-         These are certain, so they skip the search and read instantly at any level. */
-      const tacticDepth = maxDepth === 0 ? 0 : 1;
-      const myThreats = [], foeThreats = [];
-      const myT = player === A ? thrA : thrB, foeT = player === A ? thrB : thrA;
-      for (let i = 0; i < thrCells.length; i++) {
-        const c = thrCells[i];
-        if (board[c] !== EMPTY) continue;
-        if (myT[c] > 0 && myThreats.indexOf(c) < 0) myThreats.push(c);
-        if (foeT[c] > 0 && foeThreats.indexOf(c) < 0) foeThreats.push(c);   // distinct squares only
-      }
-      if (myThreats.length) {
-        const c = bestOf(myThreats);
-        return { cell: c, score: WINVAL, depth: tacticDepth, target: maxDepth, nodes: 0, ms: 0, tt: 0,
-                 aborted: false, forced: 'completes five now', root: info([c].concat(myThreats.filter(x => x !== c)), WINVAL) };
-      }
-      let forcedNote = '';
-      let rootMoves;
-      if (foeThreats.length) {
-        const c = bestOf(foeThreats);
-        if (foeThreats.length > 1) {
-          /* Two different squares complete a five for them. One move can only occupy one of
-             them, the other still wins next move, and our own five was ruled out above - so
-             this is a real loss and burning the clock to re-prove it would be a lie of
-             omission rather than insight. */
-          return { cell: c, score: -WINVAL + 2, depth: tacticDepth, target: maxDepth, nodes: 0, ms: 0, tt: 0, aborted: false,
-                   forced: 'double threat - already lost', root: info(foeThreats, -WINVAL + 2) };
-        }
-        if (maxDepth < 2) {
-          place(c, player); const rescue = evalFor(player); unplace(c, player);
-          return { cell: c, score: rescue, depth: tacticDepth, target: maxDepth, nodes: 0, ms: 0, tt: 0, aborted: false,
-                   forced: 'must block the five', root: info(foeThreats, rescue) };
-        }
-        /* The block is forced, but searching it is still worth the time: the score then says
-           whether the rescue holds instead of announcing a loss that blocking has removed,
-           and a deeper reply is measured like any other move. */
-        forcedNote = 'must block the five';
-        rootMoves = foeThreats;
-      } else {
-        rootMoves = rankMoves(globalCandidates(player), player, Math.max(6, cfg.rootBranch | 0), -1);
-      }
+      const tac = tacticOf(player, cfg);
+      if (tac && tac.done) return tac.done;
+      let forcedNote = tac ? tac.note : '';
+      let rootMoves = tac ? tac.cells : rootOrder(player, cfg);
       if (rootMoves.length === 0) {
         return { cell: -1, score: 0, depth: 0, target: maxDepth, nodes: 0, ms: 0, tt: 0, aborted: false, forced: 'no legal moves', root: [] };
       }
@@ -860,9 +965,7 @@ function Match5Engine() {
          bound ("no better than this") rather than a value. Variety may only be taken among moves
          whose near-equality was actually measured. */
       let exactSet = new Set();
-      /* How far a root move may trail the best one and still count as "almost as good".
-         Zero whenever variety is off, which keeps the root cut-off at its normal tight width. */
-      const softMargin = (cfg.tieChance > 0 && cfg.tieMargin > 0) ? (cfg.tieMargin | 0) : 0;
+      const softMargin = cfg.softMargin;
       let bestCell = rootMoves[0], bestScore = -Infinity, reached = -1;
       /* Why iterative deepening ended, so the report can tell a shallow answer that was a
          proof from one that was starved of time. */
@@ -877,31 +980,16 @@ function Match5Engine() {
         rootMoves.sort((p, q) => key(q) - key(p));
         const iterT0 = clock();
         const nodesAtStart = nodes;
-        let alpha = -Infinity;
-        let iterBest = null;
-        const passExact = new Set();
-        for (let i = 0; i < rootMoves.length; i++) {
-          const c = rootMoves[i];
-          const floor = alpha;
-          place(c, player);
-          let sc;
-          /* The child window is widened by the tie margin. A move that fails high through that
-             wider gate is provably more than a margin behind, so it is out of the "almost as
-             good" band either way; a move that does not fail high comes back as an exact value.
-             The band is then measured rather than guessed, and with variety off the margin is 0
-             so the root window is exactly the usual tight one. */
-          if (fiveA > 0 || fiveB > 0) sc = WINVAL - 1;   // this root move is half-move 1
-          else if (d === 0) sc = deltaPlace(c, player) + deltaPlace(c, other);   // no look-ahead: local value only
-          else if (d >= 2) sc = -negamax(d - 1, -Infinity, -(alpha - softMargin), other, 1);
-          else sc = evalFor(player);
-          unplace(c, player);
-          if (aborted) break;
-          scoreOf.set(c, sc);
-          if (d <= 1 || sc > floor - softMargin) passExact.add(c);   // measured inside the window
-          if (sc > alpha) { alpha = sc; iterBest = { cell: c, score: sc }; }
-        }
+        const pass = runPass(player, rootMoves, d, -Infinity, softMargin, scoreOf);
+        const iterBest = pass.iterBest;
+        const passExact = pass.exact;
         if (aborted) {
-          stopWhy = 'clock ran out during a deeper pass';
+          /* A proven loss keeps its proof in the report even when the clock ran out while the
+             search was reaching deeper: what matters to the player is that the loss is proven
+             and the five is being held off as long as was measured, not that time simply ran. */
+          stopWhy = provedLoss
+            ? 'proved a forced loss - delaying the five as long as possible, clock ran out going deeper'
+            : 'clock ran out during a deeper pass';
           // a cut iteration is still trustworthy when its best line beats the last full depth
           if (iterBest && (reached < 0 || iterBest.score > bestScore)) {
             bestCell = iterBest.cell; bestScore = iterBest.score;
@@ -944,29 +1032,11 @@ function Match5Engine() {
       if (reached < 0) reached = 0;
       if (bestScore === -Infinity) bestScore = 0;
 
-      /* Near-ties: the search often rates several root moves as effectively equal, and
-         always taking the top one makes every game identical. When other moves are
-         "almost as good" (measured within tieMargin of the best - a move that was only cut
-         off, never measured, does not qualify), take one of them sometimes,
-         weighted so the better ones stay the likely picks. A proven win or loss is
-         never randomised - a proof is taken. */
-      let soft = false;
-      if (cfg.tieChance > 0 && rootMoves.length > 1 &&
-          bestScore < WINVAL - 1000 && bestScore > -(WINVAL - 1000)) {
-        const margin = softMargin;
-        const val = (c) => { const v = scoreOf.get(c); return v === undefined ? -Infinity : v; };
-        const band = rootMoves.filter((c) => exactSet.has(c) && val(c) >= bestScore - margin);
-        if (band.length > 1 && rng((entropy ^ h1 ^ Math.imul(nodes + 7, 2654435761)) >>> 0)() < cfg.tieChance) {
-          const roll = rng((entropy ^ h2 ^ Math.imul(nodes + 11, 40503)) >>> 0)();
-          const total = band.length * (band.length + 1) / 2;   // triangular weights: best move stays likeliest
-          let k = roll * total, pick = band[0];
-          for (let i = 0; i < band.length; i++) {
-            k -= (band.length - i);
-            if (k <= 0) { pick = band[i]; break; }
-          }
-          if (pick !== bestCell) { bestCell = pick; soft = true; }
-        }
-      }
+      /* Near-ties: see softPick - only moves whose near-equality was measured may be taken,
+         and a proof is never varied. */
+      const softened = softPick(rootMoves, exactSet, scoreOf, bestCell, bestScore, cfg);
+      const soft = softened.soft;
+      if (soft) bestCell = softened.cell;
 
       return {
         cell: bestCell,
@@ -980,8 +1050,7 @@ function Match5Engine() {
         soft,
         stop: stopWhy,
         // half-moves from this move to the five, when the line is proven; 0 when it is not
-        mate: (bestScore >= WINVAL - 1000 || bestScore <= -(WINVAL - 1000))
-          ? Math.round(WINVAL - Math.abs(bestScore)) : 0,
+        mate: mateOf(bestScore),
         cand: rootMoves.length,
         width: branch,
         forced: forcedNote || 'search',
@@ -1038,6 +1107,71 @@ function Match5Engine() {
         return false;
       },
       search,
+      /* ---- the parts a split search is built from; the engine never uses these itself ----
+         rootPlan  : the squares the root would consider, in the order it would try them, plus
+                     any answer that is already certain, and the effective settings.
+         rootSearch: one root pass at one fixed depth over exactly the squares it is handed.
+         A page that partitions rootPlan across workers and runs the same depth on every part
+         gets the answer one search would have given, only deeper: the pass, the cut-off and
+         the measuring of ties are the same code, so the numbers from different workers are
+         comparable. */
+      rootPlan(player, level, override) {
+        const cfg = beginSearch(player, level, override);
+        if (stack.length === 0) return { opening: true, cells: [], cfg };
+        const tac = tacticOf(player, cfg);
+        if (tac && tac.done) return { done: tac.done, cells: [], cfg };
+        const cells = tac ? tac.cells : rootOrder(player, cfg);
+        if (!cells.length) {
+          return { done: { cell: -1, score: 0, depth: 0, target: cfg.maxDepth, nodes: 0, ms: 0, tt: 0,
+                           aborted: false, forced: 'no legal moves', root: [] }, cells: [], cfg };
+        }
+        return { cells, note: tac ? tac.note : '', cfg };
+      },
+      rootSearch(player, level, override, cells, depth) {
+        const cfg = beginSearch(player, level, override);
+        const list = (cells || []).slice();
+        if (!list.length) return { table: [], best: -1, bestScore: -Infinity, nodes: 0, tt: 0, ms: 0, aborted: false, depth };
+        const scoreOf = new Map();
+        softMode = depth <= Math.min(cfg.minDepth, 3);
+        const pass = runPass(player, list, depth, -Infinity, cfg.softMargin, scoreOf);
+        const table = [];
+        for (let i = 0; i < list.length; i++) {
+          const c = list[i];
+          /* Only squares that were actually measured go in the table. One the clock ran out
+             before is absent, which is how the page can tell the pass came back incomplete. */
+          if (!scoreOf.has(c)) continue;
+          table.push({ cell: c, score: scoreOf.get(c), exact: pass.exact.has(c) });
+        }
+        const b = pass.iterBest;
+        return { table, best: b ? b.cell : -1, bestScore: b ? b.score : -Infinity,
+                 nodes, tt: tt.size, ms: Math.round(clock() - t0), aborted, depth };
+      },
+      /* Combine the tables from separate parts of one root pass. Only measured values compete:
+         a score that merely failed to beat a better one is a bound, not a value. The first
+         move measured in a part is always measured, and so is any that beat it, so a part's
+         best is exact - which is what makes a best-over-all-parts the best over the whole root. */
+      mergeParts(parts) {
+        const scoreOf = new Map(), exact = new Set(), order = [];
+        for (const p of parts) {
+          for (const e of (p.table || [])) {
+            if (!scoreOf.has(e.cell)) { scoreOf.set(e.cell, e.score); order.push(e.cell); }
+            if (e.exact) exact.add(e.cell);
+          }
+        }
+        order.sort((p, q) => scoreOf.get(q) - scoreOf.get(p));
+        const bestCell = order.length ? order[0] : -1;
+        const bestScore = order.length ? scoreOf.get(bestCell) : -Infinity;
+        const values = order.map((c) => ({ cell: c, score: scoreOf.get(c), exact: exact.has(c) }));
+        const proof = order.length ? (bestScore >= WINVAL - 64 ? 'win' : (bestScore <= -(WINVAL - 64) ? 'loss' : '')) : '';
+        return { bestCell, bestScore, order, values, scoreOf, exact, proof };
+      },
+      /* Half-moves to a proven five, for a merged search reporting the same way a single one does. */
+      mateOf,
+      /* The one variety rule, exposed so a merged search takes its near-tie from measured
+         values exactly like a single search does. */
+      soften(list, exact, scoreOf, bestCell, bestScore, cfg) {
+        return softPick(list, exact, scoreOf, bestCell, bestScore, cfg);
+      },
       threatCells(player) { return threatList(player === undefined ? this.turn() : player); },
       stats() {
         return { scoreA, scoreB, fourA, fourB, moves: stack.length >> 1, windows: winCount };
@@ -1069,6 +1203,7 @@ function Match5Engine() {
 
   const ui = {
     sizeSel: $('sizeSel'), sideSel: $('sideSel'), lvl1Sel: $('lvl1Sel'), lvl2Sel: $('lvl2Sel'),
+    lvl1Label: $('lvl1Label'), lvl2Label: $('lvl2Label'),
     depthSel: $('depthSel'), widthSel: $('widthSel'), timeSel: $('timeSel'), timeVal: $('timeVal'),
     speedSel: $('speedSel'), speedVal: $('speedVal'), modeSeg: $('modeSeg'),
     sideWrap: $('sideWrap'), lvl1Wrap: $('lvl1Wrap'), lvl2Wrap: $('lvl2Wrap'), speedWrap: $('speedWrap'),
@@ -1076,7 +1211,7 @@ function Match5Engine() {
     turnTxt: $('turnTxt'), turnPip: $('turnPip'),
     sc1: $('sc1'), sc2: $('sc2'), scD: $('scD'),
     evalFill: $('evalFill'), evalNum: $('evalNum'),
-    stDepth: $('stDepth'), stNodes: $('stNodes'), stTime: $('stTime'), stScore: $('stScore'),
+    stDepth: $('stDepth'), stNodes: $('stNodes'), stTime: $('stTime'), stThreads: $('stThreads'), stScore: $('stScore'),
     stFours: $('stFours'), stMoves: $('stMoves'), stWhy: $('stWhy'), candBody: $('candBody'),
     banner: $('banner'), bannerRes: $('bannerRes'), bannerSub: $('bannerSub'),
     pTactic: $('pTactic'), pExt: $('pExt'), pTT: $('pTT'), searchCap: $('searchCap'),
@@ -1101,6 +1236,7 @@ function Match5Engine() {
     winLine: null,
     full: false,
     thinking: false,
+    gen: 0,                 // a search belongs to the game that asked for it, never to the next one
     hover: -1,
     hint: -1,
     scores: { 1: 0, 2: 0, d: 0 },
@@ -1115,9 +1251,13 @@ function Match5Engine() {
     'var MOD = (' + Match5Engine.toString() + ')();',
     'self.onmessage = function (ev) {',
     '  var d = ev.data || {};',
-    '  if (d.cmd !== "search") return;',
     '  var g = MOD.createGame({ size: d.size, win: d.win });',
     '  g.loadMoves(d.moves || []);',
+    '  if (d.cmd === "root") {',
+    '    self.postMessage({ cmd: "part", reqId: d.reqId, part: g.rootSearch(d.player, d.level, d.override, d.cells, d.depth) });',
+    '    return;',
+    '  }',
+    '  if (d.cmd !== "search") return;',
     '  var r = g.search(d.player, d.level, d.override);',
     '  var st = g.stats();',
     '  self.postMessage({ cmd: "result", reqId: d.reqId, result: r, stats: st });',
@@ -1126,6 +1266,26 @@ function Match5Engine() {
 
   function engineSearch(player, level, override) {
     const payload = { size: S.size, win: WIN_LEN, moves: S.moves.slice(), player, level, override };
+    /* A split search is only worth starting when there is a root worth splitting: several
+       squares to divide, a look-ahead that really searches, and a clock long enough that
+       passing messages is not the main cost. Everything else - a settled tactic, an empty
+       board, a level that asks for one thread - takes the single-worker route, which is also
+       the route a browser without workers falls back to. */
+    if (!workerDead && !poolDead && S.g) {
+      let plan = null;
+      try { plan = S.g.rootPlan(player, level, override); } catch (e) { plan = null; }
+      if (plan && plan.done) return Promise.resolve({ result: plan.done, stats: S.g.stats() });
+      if (plan && !plan.opening && plan.cfg.maxDepth >= 2 && plan.cfg.budget >= 400) {
+        const n = threadsFor(level, plan.cfg);
+        if (n >= 2 && plan.cells.length >= 2 * n && buildPool(n)) {
+          return splitSearch(player, level, override, plan, n);
+        }
+      }
+    }
+    return singleSearch(payload);
+  }
+
+  function singleSearch(payload) {
     if (!workerDead) {
       if (!worker) {
         try {
@@ -1160,9 +1320,206 @@ function Match5Engine() {
     return { result: g.search(p.player, p.level, ov), stats: g.stats() };
   }
 
+  /* ---------------- split search: one root, several cores ----------------
+     The clock is what the player chose, so it should be spent rather than left on the table
+     by a single thread. The root squares are dealt round-robin to a pool of workers - every
+     part gets a mix of strong and weak squares, so no worker sits idle while another does all
+     the pruning - and each worker runs the *same depth pass* on its own part. A pass that
+     finishes has finished for the whole root, so the merged answer is the one a single search
+     would have given, only deeper in the time available.
+     Workers share nothing but the move list and the previous pass's ordering. No shared
+     transposition table means no cross-thread bookkeeping; the price is some duplicated work,
+     which the extra cores pay for with real plies. */
+  const MAX_POOL = 8;
+  let pool = null, poolDead = false, partId = 0;
+
+  /* Threads follow the clock, not the label: a level spends its clock on as many cores as the
+     machine can spare for it, and a clock hand-set longer than the level's own gets the cores the
+     longer level would use. Strength here is time, and time is what the extra cores turn into. */
+  function threadsFor(level, cfg) {
+    const clock = (cfg && cfg.budget) ? (cfg.budget | 0) : (ENG.LEVELS[level] || ENG.LEVELS.hard).timeMs;
+    let chosen = level;
+    for (const lv of ENG.LEVEL_ORDER) {
+      if ((ENG.LEVELS[lv].timeMs | 0) <= clock) chosen = lv;
+    }
+    const want = (ENG.LEVELS[chosen] || ENG.LEVELS.hard).threads | 0;
+    if (want) return Math.max(1, Math.min(MAX_POOL, want));
+    /* 0 in the table means every core we can spare - and never the one painting the board, or
+       the interface is the thing that stops moving. */
+    const hw = (navigator.hardwareConcurrency || 2) | 0;
+    return Math.max(1, Math.min(MAX_POOL, hw - 1));
+  }
+
+  function buildPool(n) {
+    if (pool && pool.length >= n) return pool;
+    killPool();
+    const made = [];
+    try {
+      const url = URL.createObjectURL(new Blob([GLUE], { type: 'text/javascript' }));
+      for (let i = 0; i < n; i++) {
+        const w = new Worker(url);
+        const rec = { w, waiting: new Map() };
+        w.onmessage = (ev) => {
+          const d = ev.data || {};
+          if (d.cmd !== 'part') return;
+          const settle = rec.waiting.get(d.reqId);
+          rec.waiting.delete(d.reqId);
+          if (settle) settle(d.part || null);
+        };
+        w.onerror = () => { poolDead = true; };
+        made.push(rec);
+      }
+    } catch (e) { poolDead = true; made.length = 0; }
+    pool = made.length ? made : null;
+    return pool;
+  }
+
+  function killPool() {
+    if (!pool) return;
+    for (const rec of pool) {
+      rec.waiting.forEach((settle) => settle(null));
+      rec.waiting.clear();
+      try { rec.w.terminate(); } catch (e) { /* already gone */ }
+    }
+    pool = null;
+  }
+
+  /* A part that never comes back is a dead worker, not a lost game: the caller treats a null
+     part as "this route is broken" and falls back to the single-worker search. */
+  function askPart(rec, payload, ms) {
+    return new Promise((resolve) => {
+      const id = ++partId;
+      let done = false;
+      const settle = (v) => { if (done) return; done = true; clearTimeout(timer); rec.waiting.delete(id); resolve(v); };
+      const timer = setTimeout(() => settle(null), ms);
+      rec.waiting.set(id, settle);
+      try { rec.w.postMessage(Object.assign({ cmd: 'root', reqId: id }, payload)); }
+      catch (e) { settle(null); }
+    });
+  }
+
+  function splitSearch(player, level, override, plan, n) {
+    const cfg = plan.cfg;
+    const base = { size: S.size, win: WIN_LEN, moves: S.moves.slice(), player, level };
+    const t0 = performance.now();
+    const budget = cfg.budget | 0;
+
+    const scoreOf = new Map();
+    let order = plan.cells.slice();
+    let reached = -1, bestCell = order[0], bestScore = -Infinity, merged = null;
+    let stopWhy = 'searched to the requested depth', provedLoss = false, broken = false, cutOff = false;
+    let prevPassNodes = 0, growth = 5, totalNodes = 0, totalTT = 0;
+    const val = (c) => { const v = scoreOf.get(c); return v === undefined ? -Infinity : v; };
+
+    const pass = async (d) => {
+      /* deal in the order this pass would try them: the previous pass's values lead */
+      const ordered = order.slice().sort((p, q) => val(q) - val(p));
+      const dealt = [];
+      for (let i = 0; i < n; i++) dealt.push([]);
+      for (let i = 0; i < ordered.length; i++) dealt[i % n].push(ordered[i]);
+      /* every worker gets the clock that is left, so the level's time is a hard promise -
+         except that the first minDepth passes are uncuttable in the engine itself, and a part
+         that is merely taking its allowed time is not a broken route */
+      const left = Math.max(120, budget - (performance.now() - t0));
+      const tmo = d <= cfg.minDepth ? left * 4 + 4000 : left + 3000;
+      const ov = Object.assign({}, override || {}, { timeMs: left, timeMsSet: true });
+      const jobs = [];
+      for (let i = 0; i < n; i++) {
+        jobs.push(dealt[i].length
+          ? askPart(pool[i], Object.assign({}, base, { cells: dealt[i], depth: d, override: ov }), tmo)
+          : Promise.resolve({ table: [], nodes: 0, tt: 0, aborted: false }));
+      }
+      return Promise.all(jobs);
+    };
+
+    const loop = async () => {
+      for (let d = 1; d <= cfg.maxDepth; d++) {
+        const iterT0 = performance.now();
+        const parts = await pass(d);
+        if (parts.some((p) => p === null)) { broken = true; return; }
+        const passNodes = parts.reduce((s, p) => s + (p.nodes | 0), 0);
+        const passTT = parts.reduce((s, p) => s + (p.tt | 0), 0);
+        totalNodes += passNodes; totalTT += passTT;
+        const m = S.g.mergeParts(parts);
+        if (parts.some((p) => p.aborted)) {
+          stopWhy = provedLoss
+            ? 'proved a forced loss - delaying the five as long as possible, clock ran out going deeper'
+            : 'clock ran out during a deeper pass';
+          cutOff = true;
+          /* a cut pass still counts when its best line beats the last complete one */
+          if (m.bestCell >= 0 && (reached < 0 || m.bestScore > bestScore)) {
+            bestCell = m.bestCell; bestScore = m.bestScore;
+            if (reached < 0) reached = Math.min(d, cfg.maxDepth);
+          }
+          return;
+        }
+        for (const e of m.values) scoreOf.set(e.cell, e.score);
+        order = m.order; merged = m;
+        bestCell = m.bestCell; bestScore = m.bestScore; reached = d;
+        if (prevPassNodes > 40) growth = Math.max(2, Math.min(12, passNodes / prevPassNodes));
+        prevPassNodes = passNodes;
+        if (m.proof === 'win') { stopWhy = 'proved a forced win'; return; }
+        if (m.proof === 'loss') provedLoss = true;
+        /* the same projection a single search runs: only skip a deeper pass once most of the
+           clock is gone and the measured cost growth says it could not finish anyway */
+        const iterMs = Math.max(1, performance.now() - iterT0);
+        const spent = performance.now() - t0;
+        if (d >= cfg.minDepth && spent > budget * 0.55 && spent + iterMs * growth > budget) {
+          if (!provedLoss) stopWhy = 'a deeper pass would not fit the clock';
+          return;
+        }
+        if (spent >= budget) { if (!provedLoss) stopWhy = 'a deeper pass would not fit the clock'; return; }
+      }
+    };
+
+    return loop().then(() => {
+      if (broken || bestCell < 0) {
+        /* The pool let us down. Answer the ordinary way rather than answer less - and hand the
+           single search only the time that is left, so the level's promise still holds. */
+        const left = Math.max(200, budget - (performance.now() - t0));
+        const ov = Object.assign({}, override || {}, { timeMs: left, timeMsSet: true });
+        return singleSearch({ size: S.size, win: WIN_LEN, moves: S.moves.slice(), player, level, override: ov });
+      }
+      if (reached < 0) reached = 0;
+      if (bestScore === -Infinity) bestScore = 0;
+      let soft = false;
+      if (merged) {
+        const pick = S.g.soften(merged.order, merged.exact, merged.scoreOf, bestCell, bestScore, cfg);
+        if (pick.soft) { bestCell = pick.cell; soft = true; }
+      }
+      const other = player === ENG.A ? ENG.B : ENG.A;
+      const result = {
+        cell: bestCell,
+        score: bestScore,
+        depth: reached,
+        target: cfg.maxDepth,
+        nodes: totalNodes,
+        tt: totalTT,
+        ms: Math.round(performance.now() - t0),
+        aborted: cutOff,
+        soft,
+        stop: stopWhy,
+        mate: S.g.mateOf(bestScore),
+        cand: order.length,
+        width: cfg.branch,
+        threads: n,
+        forced: plan.note || 'search',
+        root: order.slice(0, 6).map((c) => {
+          const v = scoreOf.get(c);
+          return { cell: c, score: v === undefined ? 0 : v, atk: S.g.attackValue(c, player), def: S.g.attackValue(c, other) };
+        }),
+        eval: S.g.evaluateFor(ENG.A)
+      };
+      return { result, stats: S.g.stats() };
+    });
+  }
+
   /* ---------------- game flow ---------------- */
   function newGame() {
     clearTimeout(S.demoTimer);
+    /* Anything still searching belongs to the game that asked for it. Starting a new game
+       retires those results instead of letting them land on a board they never saw. */
+    S.gen++;
     S.g = ENG.createGame({ size: S.size, win: WIN_LEN });
     S.moves = []; S.over = false; S.winner = 0; S.winLine = null; S.full = false;
     S.thinking = false; S.hint = -1; S.report = null;
@@ -1193,6 +1550,7 @@ function Match5Engine() {
   function runCpu() {
     if (!isCpuTurn()) return;
     const player = S.g.turn();
+    const gen = S.gen;                 // this answer belongs to this board, and to no later one
     const level = cpuLevelFor(player);
     const override = {};
     if (S.depth !== 'auto') { override.maxDepth = +S.depth; override.minDepth = +S.depth; }
@@ -1205,6 +1563,7 @@ function Match5Engine() {
     refreshTurn();
 
     engineSearch(player, level, override).then((d) => {
+      if (gen !== S.gen) return;      // the board moved on while the workers were busy
       S.thinking = false;
       ui.thinkDots.classList.remove('show');
       if (!d || !d.result || d.result.cell < 0 || d.result.cell == null) {
@@ -1305,19 +1664,25 @@ function Match5Engine() {
     if (S.over || S.thinking) return;
     if (S.mode === 'cvc') return;
     const player = S.g.turn();
-    /* A hint should be better than the engine it is helping, so it gets at least 900 ms
-       unless the slider says otherwise; a pinned deep plies still raises that in the engine. */
-    const override = S.timeMs > 0 ? { timeMs: S.timeMs, timeMsSet: true } : { timeMs: 900 };
+    const gen = S.gen;                 // a hint about a board that no longer exists is not a hint
+    /* A hint must be at least as strong as the opponent it is helping, so it takes the
+       stronger of that side's own level and Hard. The time slider wins over both when it
+       is set; otherwise the level's own budget is what runs, exactly as on a real move. */
+    const own = S.mode === 'pvc' ? cpuLevelFor(player) : 'hard';
+    const rank = (lv) => ENG.LEVEL_ORDER.indexOf(lv);
+    const hintLevel = rank(own) >= rank('hard') ? own : 'hard';
+    const override = S.timeMs > 0 ? { timeMs: S.timeMs, timeMsSet: true } : {};
     if (S.depth !== 'auto') { override.maxDepth = +S.depth; override.minDepth = +S.depth; }
     S.thinking = true;
     ui.thinkTxt.textContent = 'COMPUTING HINT';
     ui.thinkDots.classList.add('show');
-    engineSearch(player, 'hard', override).then((d) => {
+    engineSearch(player, hintLevel, override).then((d) => {
+      if (gen !== S.gen) return;
       S.thinking = false;
       ui.thinkDots.classList.remove('show');
       if (!d || !d.result || d.result.cell < 0) return;
       S.hint = d.result.cell;
-      S.report = Object.assign({ player, level: 'hard (hint)' }, d.result);
+      S.report = Object.assign({ player, level: hintLevel + ' (hint)' }, d.result);
       paintReport(S.report, d.stats);
       dirty = true;
     });
@@ -1337,6 +1702,7 @@ function Match5Engine() {
     ui.evalFill.style.width = (100 * t).toFixed(1) + '%';
     ui.evalNum.textContent = fmtScore(diff);
     refreshTurn();
+    timeLabel();          // the clock shown here must be the clock the CPU will actually get
   }
 
   function fmtScore(v) {
@@ -1359,7 +1725,11 @@ function Match5Engine() {
 
   function whoLabel(p) {
     if (S.mode === 'cvc') return 'Engine ' + (p === A ? 'X' : 'O') + ' (' + ENG.LEVELS[p === A ? S.level1 : S.level2].label + ')';
-    if (S.mode === 'pvc') return p === S.humanSide ? 'You (X)'.replace('X', p === A ? 'X' : 'O') : 'CPU ' + (p === A ? 'X' : 'O');
+    if (S.mode === 'pvc') {
+      const tag = p === A ? 'X' : 'O';
+      // naming the strength here too, so the control that sets it is never a mystery
+      return p === S.humanSide ? 'You (' + tag + ')' : 'CPU ' + tag + ' (' + ENG.LEVELS[cpuLevelFor(p)].label + ')';
+    }
     return 'Player ' + (p === A ? 'X' : 'O');
   }
 
@@ -1378,8 +1748,9 @@ function Match5Engine() {
       ui.stWhy.textContent = '—';
       ui.stNodes.textContent = '—';
       ui.stTime.textContent = '—';
+      ui.stThreads.textContent = '—';
       ui.candBody.innerHTML = '<tr><td colspan="4" style="color:var(--dim2)">no search yet</td></tr>';
-      ui.searchCap.textContent = 'No search yet — the level decides both settings.';
+      ui.searchCap.textContent = 'No search yet — the level decides the clock, the depth and the cores.';
       ui.searchCap.classList.remove('live');
       paintPills(null);
       return;
@@ -1403,6 +1774,14 @@ function Match5Engine() {
     const perSec = r.ms >= 20 ? Math.round(r.nodes / (r.ms / 1000)) : (r.nodes > 0 ? r.nodes * 50 : 0);
     ui.stNodes.textContent = r.nodes.toLocaleString('en-US') + ' nodes';
     ui.stTime.textContent = r.ms + ' ms · ' + perSec.toLocaleString('en-US') + ' n/s';
+    /* A level's clock may be spent by several workers, each searching different root squares of
+       the same position. The depth above is still the depth the whole root reached - a pass only
+       counts when every part finished it - so this row says how the time was divided, which is
+       what makes the node total larger than one core could produce. */
+    const th = Math.max(1, r.threads | 0);
+    ui.stThreads.textContent = th > 1
+      ? th + ' workers · root split, parts merged'
+      : '1 · one core';
     if (!stats) stats = S.g.stats();
     ui.stScore.textContent = fmtScore(stats.scoreA - stats.scoreB);
     ui.stFours.textContent = stats.fourA + ' / ' + stats.fourB;
@@ -1415,7 +1794,9 @@ function Match5Engine() {
     ui.searchCap.classList.add('live');
     ui.searchCap.textContent = searched
       ? (r.cand | 0) + ' root moves examined · ' + (r.width | 0) + ' considered per position further down · ' +
-        r.depth + ' ply deep in ' + r.ms + ' ms' + (r.soft ? ' · near-equal move picked for variety' : '')
+        r.depth + ' ply deep in ' + r.ms + ' ms' +
+        (th > 1 ? ' · answered across ' + th + ' workers' : '') +
+        (r.soft ? ' · near-equal move picked for variety' : '')
       : (r.forced === 'opening variation'
         ? (r.cand | 0) + ' equivalent central openings · one chosen at random, nothing searched'
         : 'forced tactic: ' + r.forced + ' · settled without searching');
@@ -1591,10 +1972,15 @@ function Match5Engine() {
   });
   ui.sizeSel.value = String(S.size);
 
+  /* A level is a clock, so the menu says what it buys: the time per move, how deep that is
+     allowed to go, and how many cores the time is spent on. Nothing about the strength is hidden. */
   ENG.LEVEL_ORDER.forEach((lv) => {
-    const label = ENG.LEVELS[lv].label;
-    const a = document.createElement('option'); a.value = lv; a.textContent = label;
-    const b = document.createElement('option'); b.value = lv; b.textContent = label;
+    const c = ENG.LEVELS[lv];
+    const cores = threadsFor(lv, null);
+    const text = c.label + ' — ' + (c.timeMs / 1000).toFixed(1) + ' s, up to ' + c.maxDepth + ' plies, ' +
+      (cores > 1 ? cores + ' cores' : '1 core');
+    const a = document.createElement('option'); a.value = lv; a.textContent = text;
+    const b = document.createElement('option'); b.value = lv; b.textContent = text;
     ui.lvl1Sel.appendChild(a); ui.lvl2Sel.appendChild(b);
   });
   ui.lvl1Sel.value = S.level1; ui.lvl2Sel.value = S.level2;
@@ -1603,8 +1989,26 @@ function Match5Engine() {
 
   function applyVisibility() {
     ui.sideWrap.style.display = S.mode === 'pvc' ? '' : 'none';
-    ui.lvl1Wrap.style.display = S.mode === 'cvc' ? '' : 'none';
-    ui.lvl2Wrap.style.display = S.mode === 'cvc' ? '' : 'none';
+    /* The number of strength controls follows the number of computer players - but every mode
+       with a computer player gets to set it. Against the CPU one control is enough: which side
+       the CPU plays is decided by "You play", so the one value is applied to both sides and
+       the CPU inherits it whichever side the human takes. */
+    if (S.mode === 'pvc') {
+      S.level2 = S.level1;
+      ui.lvl2Sel.value = S.level2;
+      ui.lvl1Label.textContent = 'CPU strength';
+      ui.lvl1Sel.value = S.level1;
+      ui.lvl1Wrap.style.display = '';
+      ui.lvl2Wrap.style.display = 'none';
+    } else if (S.mode === 'cvc') {
+      ui.lvl1Label.textContent = 'Engine X';
+      ui.lvl2Label.textContent = 'Engine O';
+      ui.lvl1Wrap.style.display = '';
+      ui.lvl2Wrap.style.display = '';
+    } else {
+      ui.lvl1Wrap.style.display = 'none';
+      ui.lvl2Wrap.style.display = 'none';
+    }
     ui.speedWrap.style.display = S.mode === 'cvc' ? '' : 'none';
     ui.modeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.mode === S.mode));
   }
@@ -1615,14 +2019,28 @@ function Match5Engine() {
   });
   ui.sizeSel.addEventListener('change', () => { S.size = +ui.sizeSel.value; restart(); });
   ui.sideSel.addEventListener('change', () => { S.humanSide = +ui.sideSel.value; restart(); });
-  ui.lvl1Sel.addEventListener('change', () => { S.level1 = ui.lvl1Sel.value; refresh(); });
+  ui.lvl1Sel.addEventListener('change', () => {
+    S.level1 = ui.lvl1Sel.value;
+    if (S.mode === 'pvc') { S.level2 = S.level1; ui.lvl2Sel.value = S.level2; }   // the CPU inherits it on either side
+    refresh();
+  });
   ui.lvl2Sel.addEventListener('change', () => { S.level2 = ui.lvl2Sel.value; refresh(); });
   ui.depthSel.addEventListener('change', () => { S.depth = ui.depthSel.value; });
   ui.widthSel.addEventListener('change', () => { S.width = ui.widthSel.value; });
-  ui.timeSel.addEventListener('input', () => {
-    S.timeMs = +ui.timeSel.value;
-    ui.timeVal.textContent = S.timeMs === 0 ? 'level default' : S.timeMs + ' ms';
-  });
+  /* The clock is the strength setting now, so this readout has to say which clock is actually in
+     force: the level's, or the one slid over it. */
+  function timeLabel() {
+    const secs = (ms) => (ms / 1000).toFixed(1) + ' s';
+    if (S.mode === 'pvp') { ui.timeVal.textContent = 'no CPU in this mode'; return; }
+    const clocks = [];
+    for (const k of (S.mode === 'pvc' ? [S.level1] : [S.level1, S.level2])) {
+      const c = ENG.LEVELS[k];
+      if (c && clocks.indexOf(c.timeMs) < 0) clocks.push(c.timeMs);
+    }
+    const lvl = clocks.map(secs).join(' / ');
+    ui.timeVal.textContent = S.timeMs > 0 ? secs(S.timeMs) + ' · the level would use ' + lvl : lvl + ' (the level)';
+  }
+  ui.timeSel.addEventListener('input', () => { S.timeMs = +ui.timeSel.value; timeLabel(); });
   ui.speedSel.addEventListener('input', () => { S.delay = +ui.speedSel.value; ui.speedVal.textContent = S.delay + ' ms'; });
   ui.newBtn.addEventListener('click', newGame);
   ui.againBtn.addEventListener('click', newGame);
