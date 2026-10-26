@@ -135,6 +135,7 @@ async function main() {
     const last = [...seen].filter(Boolean).pop() || '';
     const f = (k) => { const m = last.match(new RegExp(k + '=([^|]*)')); return m ? m[1].trim() : '-'; };
     console.log('  final: moves=' + f('MOVES') + ' | depth=' + f('DEPTH') + ' | why=' + f('WHY') +
+      ' | by=' + f('BY') + ' in ' + f('DECCOL') +
       ' | workers=' + f('WORKERS') +
       ' | ink=' + ((last.match(/ink=(\d+)/) || [])[1] || '-') +
       ' | panel-over-board=' + f('OVERLAP') + ' px2 | banner=' + f('BANNER'));
@@ -162,6 +163,19 @@ async function main() {
       console.log('  late read-outs answered across a pool: ' + split.length + ' of ' + late.length +
         ' (single core: ' + solo.length + ')' +
         (split.length ? '  e.g. ' + (split[0][1].match(/WORKERS=([^|]*)/) || [])[1].trim() : ''));
+      /* A decision belongs to the side that made it, so its text is drawn in that side's stone
+         colour; the log keeps every decision readable after the opponent moves, in the same colours.
+         Both are properties of rendered style, so they are measured from computed colour, not assumed. */
+      const owned = late.filter(([, t]) => /^(rgb\(245, 167, 66\)|rgb\(72, 207, 216\))$/.test(field(t, 'DECCOL'))).length;
+      console.log('  decision text drawn in a player colour: ' + owned + ' of ' + late.length +
+        '  seen: ' + [...new Set(late.map(([, t]) => field(t, 'DECCOL')))].join(' / '));
+      console.log('  decision log (newest read-out): ' + field(late[late.length - 1][1], 'LOG'));
+      /* Advanced settings are folded by default; the summary line is what stays visible, and it has
+         to name anything the player pinned (the #d12 case pins a look-ahead, so it must show). */
+      const folds = late.map(([, t]) => field(t, 'SETTINGS'));
+      console.log('  advanced panel open when it should be closed: ' +
+        folds.filter((s) => /^open/.test(s)).length + ' of ' + folds.length);
+      console.log('  settings summary (newest): ' + folds[folds.length - 1]);
     }
     console.log('  banner: ' + (banner || '(never shown)'));
     console.log('  read-outs naming a proven forced line: ' + proofKeys.size);

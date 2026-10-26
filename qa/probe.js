@@ -80,15 +80,43 @@
     };
     return t('lvl1Sel') + ' vs ' + t('lvl2Sel');
   }
+  // the colour the decision text is actually drawn in - it must be one of the two stone colours
+  function colOf(id) {
+    var e = q(id);
+    return e ? getComputedStyle(e).color : '-';
+  }
+  // the decision log: how many lines, which colours they use, and what the newest one says
+  function logInfo() {
+    var l = q('logList');
+    if (!l) return 'no-log-element';
+    var kids = Array.prototype.slice.call(l.querySelectorAll('.msg'));
+    var cols = {};
+    kids.forEach(function (m) {
+      var c = getComputedStyle(m.querySelector('.mv')).color;
+      cols[c] = (cols[c] || 0) + 1;
+    });
+    var seen = Object.keys(cols).map(function (c) { return c + '×' + cols[c]; });
+    var last = kids.length ? kids[kids.length - 1].textContent.replace(/\s+/g, ' ').slice(0, 170) : '(none)';
+    return kids.length + ' lines cols[' + seen.join(',') + '] last "' + last + '"';
+  }
+  // the advanced panel must be closed by default, and its visible line must state what is pinned
+  function foldInfo() {
+    var d = q('settingsCard');
+    if (!d) return 'no-settings-card';
+    var peek = q('setPeek');
+    return (d.open ? 'open' : 'closed') + ' peek="' + (peek ? peek.textContent.replace(/\s+/g, ' ') : '-') + '"';
+  }
   setInterval(function () {
     box.textContent = 'HASH=' + hash + ' | MOVES=' + q('stMoves').textContent + ' | ' + probeCanvas() +
       ' | DEPTH=' + q('stDepth').textContent + ' | WHY=' + q('stWhy').textContent +
+      ' | DECCOL=' + colOf('stWhy') + ' | BY=' + q('stBy').textContent + ' | BYCOL=' + colOf('stBy') +
       ' | NODES=' + q('stNodes').textContent + ' | TIME=' + q('stTime').textContent +
       ' | WORKERS=' + q('stThreads').textContent + ' | LVL=' + lvlText() +
       ' | FOURS=' + q('stFours').textContent + ' | SCORE=' + q('stScore').textContent +
       ' | TURN=' + q('turnTxt').textContent + ' | THINK=' + q('thinkDots').className +
       ' | OVERLAP=' + overlap() +
-      ' | CAP=' + q('searchCap').textContent +
+      ' | LOG=' + logInfo() +
+      ' | SETTINGS=' + foldInfo() +
       ' | BANNER=' + (q('banner') && q('banner').classList.contains('show') ? q('bannerRes').textContent : '(hidden)') +
       ' | TALLY=' + q('sc1').textContent + '/' + q('scD').textContent + '/' + q('sc2').textContent;
   }, 250);

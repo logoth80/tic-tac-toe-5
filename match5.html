@@ -110,7 +110,12 @@
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font: 12px/1.5 var(--mono); }
   .kv dt { color: var(--dim2); }
   .kv dd { margin: 0; color: var(--ink); }
-  .kv dd.hot { color: var(--accent); font-weight: 700; }
+  /* A decision was made by one of the two players, so it wears that player's colour -
+     the colour is the identity, and emphasis is only a weight. There is deliberately no
+     third colour here: a third hue would compete with the two the stones already use. */
+  .kv dd.p1c, .kv dd.p2c { font-weight: 700; }
+  .kv dd.p1c { color: var(--p1); }
+  .kv dd.p2c { color: var(--p2); }
   .cands { margin-top: 11px; border-top: 1px solid var(--line); padding-top: 9px; }
   .cands table { width: 100%; border-collapse: collapse; font: 11.5px/1.4 var(--mono); }
   .cands th { text-align: left; color: var(--dim2); font-weight: 600; letter-spacing: .04em; padding-bottom: 4px; }
@@ -119,6 +124,37 @@
   .cands tr.best td { color: #fff; }
   .cands td.sc { text-align: right; }
 
+  /* ---------- decision log ----------
+     Each search the engines make stays in the sidebar as a line of the game, so a
+     decision is not erased when the other side moves. Same colours as the stones. */
+  .log { display: flex; flex-direction: column; gap: 7px; max-height: 340px; overflow-y: auto; }
+  .log .msg { border-left: 3px solid var(--line2); border-radius: 8px; background: rgba(255,255,255,.022); padding: 6px 9px 7px; }
+  .log .msg .who { display: flex; gap: 6px; align-items: baseline; font: 700 10px/1.35 var(--sans);
+    letter-spacing: .1em; text-transform: uppercase; color: var(--dim2); }
+  .log .msg .who i { font: 600 10px/1.35 var(--mono); letter-spacing: 0; font-style: normal; color: var(--dim2); }
+  .log .msg .mv { margin-top: 3px; font: 700 12.5px/1.35 var(--mono); color: var(--ink); }
+  .log .msg .det { font: 400 11px/1.45 var(--mono); color: var(--dim2); }
+  .log .msg.x { border-left-color: var(--p1); }
+  .log .msg.x .who, .log .msg.x .who i { color: var(--p1); }
+  .log .msg.x .mv { color: var(--p1); }
+  .log .msg.o { border-left-color: var(--p2); }
+  .log .msg.o .who, .log .msg.o .who i { color: var(--p2); }
+  .log .msg.o .mv { color: var(--p2); }
+  .log .empty { color: var(--dim2); font: 400 11.5px/1.5 var(--mono); }
+
+  /* ---------- folded advanced settings ----------
+     Folded by default: the summary line states what is currently in force, so
+     nothing that matters is hidden, and the panel itself sits at the end. */
+  details.card > summary { cursor: pointer; list-style: none; padding: 11px 14px 10px; font-size: 11px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--dim2); border-bottom: 1px solid transparent; font-weight: 700; }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary:hover { color: var(--dim); }
+  details.card > summary .peek { display: block; margin-top: 4px; font: 400 10.5px/1.45 var(--mono);
+    letter-spacing: 0; text-transform: none; color: var(--dim2); }
+  details.card[open] > summary { border-bottom-color: var(--line); }
+  details.card > summary::after { content: '\25b8'; float: right; color: var(--dim2); }
+  details.card[open] > summary::after { content: '\25be'; }
+
   .note { color: var(--dim2); font-size: 11.5px; line-height: 1.55; }
   .keys { margin-top: 14px; color: var(--dim2); font-size: 11.5px; text-align: center; }
   .keys b { color: var(--dim); font-family: var(--mono); }
@@ -126,7 +162,6 @@
   .pill { font: 600 10.5px/1 var(--mono); color: var(--dim); border: 1px solid var(--line2); border-radius: 999px; padding: 5px 8px; }
   .pill.hot { color: var(--accent); border-color: var(--accent); }
   .cap { margin: 9px 0 0; color: var(--dim2); font-size: 11.5px; line-height: 1.45; }
-  .cap.live { color: var(--dim); font-family: var(--mono); font-size: 11px; }
 </style>
 </head>
 <body>
@@ -209,7 +244,56 @@
       </div>
 
       <div class="card">
-        <h2>Search settings</h2>
+        <h2>Engine report</h2>
+        <div class="body">
+          <dl class="kv">
+            <dt>searched by</dt><dd id="stBy">—</dd>
+            <dt>depth reached</dt><dd id="stDepth">—</dd>
+            <dt>decision</dt><dd id="stWhy">—</dd>
+            <dt>positions</dt><dd id="stNodes">—</dd>
+            <dt>time</dt><dd id="stTime">—</dd>
+            <dt>search workers</dt><dd id="stThreads">—</dd>
+            <dt>static score (X−O)</dt><dd id="stScore">—</dd>
+            <dt>fours X / O</dt><dd id="stFours">—</dd>
+            <dt>moves played</dt><dd id="stMoves">0</dd>
+          </dl>
+          <div class="cands">
+            <table>
+              <thead><tr><th>top candidates</th><th class="sc">attack</th><th class="sc">defend</th><th class="sc">score</th></tr></thead>
+              <tbody id="candBody"><tr><td colspan="4" style="color:var(--dim2)">no search yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Decision log</h2>
+        <div class="body">
+          <div class="log" id="logList"><p class="empty">Nothing decided yet — every search an engine makes is written here, in the order it happened.</p></div>
+          <p class="cap">One line per decision: the square chosen, how deep the search actually saw, what it cost, and why. The colours match the stones, so a game reads as a conversation. Undo takes the lines back with the moves.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Notes</h2>
+        <div class="body note">
+          Win by lining up <b>5 stones</b> horizontally, vertically or diagonally. The engine scores every
+          5-cell window on the board, keeps only moves adjacent to play, orders them by attack+defence value and
+          searches with alpha–beta pruning, a transposition table and forced-threat extensions.
+          Every cell that would complete a five is tracked incrementally, so a win is always taken and an
+          enemy five is never ignored. Look-ahead is iterative: it always finishes the minimum depth and opens
+          a deeper pass only when the projected cost fits the clock. A level <i>is</i> a clock —
+          <b>0.5&nbsp;s, 1.5&nbsp;s, 3&nbsp;s, 6&nbsp;s</b> — and that time is spent across cores: each worker
+          searches different first moves of the same position to the same depth and the parts are merged, which
+          is what turns extra time into extra plies. The report says how many of them answered.
+          If several moves come back almost equal, the engine sometimes plays one of them instead of the top
+          move (better ones stay likelier), and the first move is drawn at random from the central block, so
+          games differ from the start. A proven win or loss is never randomised.
+        </div>
+      </div>
+
+      <details class="card" id="settingsCard">
+        <summary>Search settings — advanced<span class="peek" id="setPeek">nothing pinned: each side's level decides its own clock, depth and cores</span></summary>
         <div class="body">
           <div class="row">
             <label class="f">Look-ahead
@@ -236,12 +320,11 @@
               </select>
             </label>
           </div>
-          <p class="cap">The menu above states each level's clock, its ceiling on plies and the cores it will
-            use. Pinning a look-ahead or a width here overrides that part, and pinning more plies than the
-            level's own lengthens its clock so the deeper choice gets the time it needs; sliding more time onto
-            a short level gets it the cores the longer level would use. Making a five, and answering a single
-            open five square, settle without searching; a search that proves the outcome stops early and the
-            report counts the moves left before the five.</p>
+          <p class="cap">Everything here overrides what the level menu promises, and the summary line above says what is
+            currently in force. Pinning more plies than a level's own lengthens its clock so the deeper choice gets the
+            time it needs; sliding more time onto a short level gets it the cores the longer level would use. Making a
+            five, and answering a single open five square, settle without searching; a search that proves the outcome
+            stops early and the report counts the moves left before the five.</p>
           <div class="row">
             <label class="f" style="flex:1 1 100%">Time per move <span id="timeVal">level default</span>
               <input type="range" id="timeSel" min="0" max="10000" step="100" value="0">
@@ -252,49 +335,8 @@
             <span class="pill" id="pExt">four-threat extension: +1 ply</span>
             <span class="pill" id="pTT">transposition table</span>
           </div>
-          <p class="cap" id="searchCap">No search yet — the level decides the clock, the depth and the cores.</p>
         </div>
-      </div>
-
-      <div class="card">
-        <h2>Engine report</h2>
-        <div class="body">
-          <dl class="kv">
-            <dt>depth reached</dt><dd id="stDepth">—</dd>
-            <dt>decision</dt><dd id="stWhy">—</dd>
-            <dt>positions</dt><dd id="stNodes">—</dd>
-            <dt>time</dt><dd id="stTime">—</dd>
-            <dt>search workers</dt><dd id="stThreads">—</dd>
-            <dt>static score (X−O)</dt><dd id="stScore">—</dd>
-            <dt>fours X / O</dt><dd id="stFours">—</dd>
-            <dt>moves played</dt><dd id="stMoves">0</dd>
-          </dl>
-          <div class="cands">
-            <table>
-              <thead><tr><th>top candidates</th><th class="sc">attack</th><th class="sc">defend</th><th class="sc">score</th></tr></thead>
-              <tbody id="candBody"><tr><td colspan="4" style="color:var(--dim2)">no search yet</td></tr></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>Notes</h2>
-        <div class="body note">
-          Win by lining up <b>5 stones</b> horizontally, vertically or diagonally. The engine scores every
-          5-cell window on the board, keeps only moves adjacent to play, orders them by attack+defence value and
-          searches with alpha–beta pruning, a transposition table and forced-threat extensions.
-          Every cell that would complete a five is tracked incrementally, so a win is always taken and an
-          enemy five is never ignored. Look-ahead is iterative: it always finishes the minimum depth and opens
-          a deeper pass only when the projected cost fits the clock. A level <i>is</i> a clock —
-          <b>0.5&nbsp;s, 1.5&nbsp;s, 3&nbsp;s, 6&nbsp;s</b> — and that time is spent across cores: each worker
-          searches different first moves of the same position to the same depth and the parts are merged, which
-          is what turns extra time into extra plies. The report says how many of them answered.
-          If several moves come back almost equal, the engine sometimes plays one of them instead of the top
-          move (better ones stay likelier), and the first move is drawn at random from the central block, so
-          games differ from the start. A proven win or loss is never randomised.
-        </div>
-      </div>
+      </details>
     </aside>
   </div>
 
@@ -1214,7 +1256,8 @@ function Match5Engine() {
     stDepth: $('stDepth'), stNodes: $('stNodes'), stTime: $('stTime'), stThreads: $('stThreads'), stScore: $('stScore'),
     stFours: $('stFours'), stMoves: $('stMoves'), stWhy: $('stWhy'), candBody: $('candBody'),
     banner: $('banner'), bannerRes: $('bannerRes'), bannerSub: $('bannerSub'),
-    pTactic: $('pTactic'), pExt: $('pExt'), pTT: $('pTT'), searchCap: $('searchCap'),
+    pTactic: $('pTactic'), pExt: $('pExt'), pTT: $('pTT'),
+    stBy: $('stBy'), logList: $('logList'), settingsCard: $('settingsCard'), setPeek: $('setPeek'),
     thinkDots: $('thinkDots'), thinkTxt: $('thinkTxt'), boardHost: $('boardHost'),
     board: canvas
   };
@@ -1526,6 +1569,7 @@ function Match5Engine() {
     hideBanner();
     ui.thinkDots.classList.remove('show');
     paintReport(null);
+    clearLog();                 // a new game starts its own conversation
     refresh();
     scheduleCpu();
   }
@@ -1591,6 +1635,7 @@ function Match5Engine() {
     if (S.mode === 'pvc' && S.g.turn() !== S.humanSide) return;
     if (cell < 0 || cell >= S.g.N || S.g.board[cell] !== 0) return;
     S.hint = -1;
+    logHuman(cell);              // the log is the game, so a move belongs in it before it is made
     S.g.play(cell);
     S.moves.push(cell);
     afterMove();
@@ -1604,6 +1649,17 @@ function Match5Engine() {
       S.winLine = line ? line.line : null;
       S.scores[w === A ? 1 : 2]++;
       showBanner((w === A ? 'X' : 'O') + ' WINS', 'five in a row · move ' + S.moves.length);
+      /* A game that is written down as a conversation should end like one: the five that
+         decided it is recorded square by square, in the winner's colour. Undo takes this
+         line back with the move, exactly like the others. */
+      logEntry({
+        side: w === A ? 'x' : 'o',
+        who: 'the five that decided it',
+        tag: 'move #' + S.moves.length,
+        mvText: (w === A ? 'X' : 'O') + ' wins',
+        det: S.winLine ? ['five: ' + S.winLine.map((c) => S.g.moveName(c)).join(' · ')] : null,
+        mv: S.moves.length
+      });
     } else if (S.g.isFull()) {
       finishDraw();
     } else {
@@ -1616,6 +1672,10 @@ function Match5Engine() {
   function finishDraw() {
     S.over = true; S.winner = 0; S.full = true; S.scores.d++;
     showBanner('DRAW', 'board is full — no five-in-a-row');
+    logEntry({
+      side: 'you', who: 'the board is full', tag: 'move #' + S.moves.length,
+      mvText: 'draw', det: null, mv: S.moves.length
+    });
     refresh();
     dirty = true;
   }
@@ -1655,6 +1715,7 @@ function Match5Engine() {
     for (let i = 0; i < steps && S.moves.length; i++) { S.moves.pop(); S.g.undo(); }
     S.hint = -1; S.report = null;
     paintReport(null);
+    trimLog(S.moves.length);    // the lines for the moves that were taken back go with them
     refresh();
     scheduleCpu();
     dirty = true;
@@ -1683,7 +1744,7 @@ function Match5Engine() {
       if (!d || !d.result || d.result.cell < 0) return;
       S.hint = d.result.cell;
       S.report = Object.assign({ player, level: hintLevel + ' (hint)' }, d.result);
-      paintReport(S.report, d.stats);
+      paintReport(S.report, d.stats, true);
       dirty = true;
     });
   }
@@ -1742,43 +1803,51 @@ function Match5Engine() {
     ui.pTT.textContent = 'transposition table' + (r ? ' · ' + ((r.tt | 0)).toLocaleString('en-US') + ' entries' : '');
   }
 
-  function paintReport(r, stats) {
+  function paintReport(r, stats, advice) {
     if (!r) {
       ui.stDepth.textContent = '—';
       ui.stWhy.textContent = '—';
+      ui.stWhy.className = '';
+      ui.stBy.textContent = '—';
+      ui.stBy.className = '';
       ui.stNodes.textContent = '—';
       ui.stTime.textContent = '—';
       ui.stThreads.textContent = '—';
       ui.candBody.innerHTML = '<tr><td colspan="4" style="color:var(--dim2)">no search yet</td></tr>';
-      ui.searchCap.textContent = 'No search yet — the level decides the clock, the depth and the cores.';
-      ui.searchCap.classList.remove('live');
       paintPills(null);
       return;
     }
     paintPills(r);
+    const mine = r.player === A;                 // A plays X (orange), B plays O (cyan)
     /* A shallow answer is only a warning when the search was starved for time. If it proved
        the outcome it stopped on purpose - and the panel has to say which one happened. */
     /* The engine counts half-moves; a player counts their own stones. mate 1 or 2 means the
        five lands on the very next move that makes it, mate 3 on the second one. */
     const proof = r.mate ? ' · proven: ' + (r.score > 0 ? 'my five in ' : 'their five in ') +
       Math.ceil(r.mate / 2) + (Math.ceil(r.mate / 2) === 1 ? ' move' : ' moves') : '';
-    ui.stDepth.textContent = r.depth + ' ply (max ' + r.target + ')' + (r.aborted ? ' · cut off' : '') + proof;
+    const depthText = r.depth + ' ply (max ' + r.target + ')' + (r.aborted ? ' · cut off' : '') + proof;
     // a forced block can still be searched, so "did it think?" is answered by the node count
     const searched = (r.nodes | 0) > 0 || !r.forced || r.forced === 'search';
     let why = r.forced === 'search'
       ? (r.depth ? 'alpha–beta search' : 'local line value, no look-ahead')
       : r.forced;
     if (r.forced === 'search' && r.stop && r.stop !== 'searched to the requested depth') why += ' · ' + r.stop;
-    ui.stWhy.textContent = r.soft ? why + ' · near-equal move' : why;
-    ui.stWhy.className = (!searched || r.soft || r.stop === 'a deeper pass would not fit the clock') ? 'hot' : '';
+    if (r.soft) why += ' · near-equal move';
     const perSec = r.ms >= 20 ? Math.round(r.nodes / (r.ms / 1000)) : (r.nodes > 0 ? r.nodes * 50 : 0);
-    ui.stNodes.textContent = r.nodes.toLocaleString('en-US') + ' nodes';
-    ui.stTime.textContent = r.ms + ' ms · ' + perSec.toLocaleString('en-US') + ' n/s';
     /* A level's clock may be spent by several workers, each searching different root squares of
        the same position. The depth above is still the depth the whole root reached - a pass only
        counts when every part finished it - so this row says how the time was divided, which is
        what makes the node total larger than one core could produce. */
     const th = Math.max(1, r.threads | 0);
+    ui.stDepth.textContent = depthText;
+    /* The decision belongs to whichever side made it, so it is written in that side's colour
+       rather than in a third colour of its own. Same for the line naming the engine. */
+    ui.stBy.textContent = 'engine ' + (mine ? 'X' : 'O') + (r.level ? ' · ' + r.level : '');
+    ui.stBy.className = mine ? 'p1c' : 'p2c';
+    ui.stWhy.textContent = why;
+    ui.stWhy.className = mine ? 'p1c' : 'p2c';
+    ui.stNodes.textContent = r.nodes.toLocaleString('en-US') + ' nodes';
+    ui.stTime.textContent = r.ms + ' ms · ' + perSec.toLocaleString('en-US') + ' n/s';
     ui.stThreads.textContent = th > 1
       ? th + ' workers · root split, parts merged'
       : '1 · one core';
@@ -1791,15 +1860,83 @@ function Match5Engine() {
       '<td class="sc">' + (Math.abs(c.score) >= 1e8 ? (c.score > 0 ? 'win' : 'loss') : fmtScore(c.score)) + '</td></tr>'
     ).join('');
     ui.candBody.innerHTML = rows || '<tr><td colspan="4" style="color:var(--dim2)">no legal moves</td></tr>';
-    ui.searchCap.classList.add('live');
-    ui.searchCap.textContent = searched
-      ? (r.cand | 0) + ' root moves examined · ' + (r.width | 0) + ' considered per position further down · ' +
-        r.depth + ' ply deep in ' + r.ms + ' ms' +
-        (th > 1 ? ' · answered across ' + th + ' workers' : '') +
-        (r.soft ? ' · near-equal move picked for variety' : '')
-      : (r.forced === 'opening variation'
-        ? (r.cand | 0) + ' equivalent central openings · one chosen at random, nothing searched'
-        : 'forced tactic: ' + r.forced + ' · settled without searching');
+    logDecision(r, { mine, depthText, why, perSec, th, searched }, advice);
+  }
+
+  /* ---------------- the decision log ----------------
+     A decision is something one side did at a moment in the game, so it does not belong in a
+     panel that only ever shows the newest one. Every search - and every human move - leaves a
+     line here, in the colours of the stones, so the game reads as a conversation and an answer
+     survives the opponent's move. Undo takes the lines back with the moves. */
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  function logEntry(o) {
+    const list = ui.logList;
+    const empty = list.querySelector('.empty');
+    if (empty) empty.remove();
+    const follow = list.scrollHeight - list.scrollTop - list.clientHeight < 70;  // only follow if the reader was at the bottom
+    const div = document.createElement('div');
+    div.className = 'msg ' + o.side;
+    if (o.mv != null) div.dataset.mv = String(o.mv);
+    div.innerHTML = '<div class="who">' + esc(o.who) + (o.tag ? ' <i>' + esc(o.tag) + '</i>' : '') + '</div>' +
+      '<div class="mv">' + esc(o.mvText) + '</div>' +
+      (o.det ? o.det.map((d) => '<div class="det">' + esc(d) + '</div>').join('') : '');
+    list.appendChild(div);
+    if (follow) list.scrollTop = list.scrollHeight;
+    while (list.children.length > 80) list.removeChild(list.firstChild);   // a long game stays bounded
+  }
+
+  function logDecision(r, info, advice) {
+    const side = info.mine ? 'x' : 'o';
+    const head = info.searched
+      ? [info.why,
+         info.depthText + ' · ' + (r.nodes | 0).toLocaleString('en-US') + ' nodes in ' + r.ms + ' ms · ' +
+           (info.th > 1 ? info.th + ' workers · ' : 'one core · ') + info.perSec.toLocaleString('en-US') + ' n/s' +
+           ' · ' + (r.cand | 0) + ' root squares, ' + (r.width | 0) + ' kept per position deeper']
+      : [r.forced === 'opening variation'
+           ? (r.cand | 0) + ' equivalent central openings, one taken at random — nothing searched'
+           : r.forced + ' — settled without searching'];
+    logEntry({
+      side: side,
+      who: advice ? 'advice for ' + (info.mine ? 'X' : 'O') : 'engine ' + (info.mine ? 'X' : 'O'),
+      tag: advice ? 'about move #' + (S.moves.length + 1) + (r.level ? ' · ' + r.level : '')
+                  : '#' + (S.moves.length + 1) + (r.level ? ' · ' + r.level : ''),
+      mvText: S.g.moveName(r.cell),
+      det: head,
+      /* The line names the move it led to, so undo can take it back with that move.
+         Advice is not a move, so it is not tied to one - it stays as commentary. */
+      mv: advice ? null : S.moves.length + 1
+    });
+  }
+
+  function logHuman(cell) {
+    if (S.mode === 'cvc') return;
+    const twoSided = S.mode === 'pvp';
+    const me = S.g.turn();
+    logEntry({
+      side: 'you',
+      who: 'you' + (twoSided ? ' playing ' + (me === A ? 'X' : 'O') : ''),
+      tag: '#' + (S.moves.length + 1),
+      mvText: S.g.moveName(cell),
+      det: null,
+      mv: S.moves.length + 1
+    });
+  }
+
+  function trimLog(kept) {
+    const list = ui.logList;
+    for (let i = list.children.length - 1; i >= 0; i--) {
+      const el = list.children[i];
+      const n = +el.dataset.mv;
+      if (el.dataset.mv != null && n > kept) list.removeChild(el);
+    }
+    if (!list.children.length) {
+      list.innerHTML = '<p class="empty">Nothing decided yet — every search an engine makes is written here, in the order it happened.</p>';
+    }
+  }
+
+  function clearLog() {
+    ui.logList.innerHTML = '<p class="empty">Nothing decided yet — every search an engine makes is written here, in the order it happened.</p>';
   }
 
   /* ---------------- drawing ---------------- */
@@ -2025,11 +2162,22 @@ function Match5Engine() {
     refresh();
   });
   ui.lvl2Sel.addEventListener('change', () => { S.level2 = ui.lvl2Sel.value; refresh(); });
-  ui.depthSel.addEventListener('change', () => { S.depth = ui.depthSel.value; });
-  ui.widthSel.addEventListener('change', () => { S.width = ui.widthSel.value; });
+  ui.depthSel.addEventListener('change', () => { S.depth = ui.depthSel.value; settingsPeek(); });
+  ui.widthSel.addEventListener('change', () => { S.width = ui.widthSel.value; settingsPeek(); });
+  /* The advanced panel is folded away, so the line that is visible has to say what is in force:
+     the pinned look-ahead, the pinned width, the pinned clock - or that nothing is pinned. */
+  function settingsPeek() {
+    const on = [];
+    if (S.depth !== 'auto') on.push((+S.depth === 0 ? 'look-ahead pinned to 0 (no search)' : 'look-ahead pinned to ' + S.depth + ' plies'));
+    if (S.width !== 'auto') on.push('width pinned to ' + S.width);
+    if (S.timeMs > 0) on.push('clock pinned to ' + (S.timeMs / 1000).toFixed(1) + ' s');
+    ui.setPeek.textContent = on.length ? on.join(' · ')
+      : 'nothing pinned: each side\'s level decides its own clock, depth and cores';
+  }
   /* The clock is the strength setting now, so this readout has to say which clock is actually in
      force: the level's, or the one slid over it. */
   function timeLabel() {
+    settingsPeek();
     const secs = (ms) => (ms / 1000).toFixed(1) + ' s';
     if (S.mode === 'pvp') { ui.timeVal.textContent = 'no CPU in this mode'; return; }
     const clocks = [];
