@@ -1,0 +1,4 @@
+# Text stays LF both in the repo and on disk: match5.html is served and parsed
+# as-is, and the tests/QA scripts compare file contents byte for byte.
+* text=auto eol=lf
+*.png binary

@@ -1,0 +1,9 @@
+# Chrome user-data-dir created by qa/cdp-drive.mjs (hundreds of MB, disposable)
+qa/cdp-profile/
+
+# QA output: screenshots and the Chrome stderr log
+qa/*.png
+qa/chrome-err.txt
+
+# Generated: match5.html with qa/probe.js injected before </body> (see README)
+qa/probe.html
