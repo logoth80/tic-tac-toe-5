@@ -23,9 +23,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 
-const html = fs.readFileSync(new URL('../match5.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const block = html.match(/\/\*__ENGINE_START__\*\/([\s\S]*?)\/\*__ENGINE_END__\*\//);
-if (!block) { console.error('ENGINE markers not found in match5.html'); process.exit(1); }
+if (!block) { console.error('ENGINE markers not found in index.html'); process.exit(1); }
 const ENG = eval('(' + block[1].trim() + ')')();
 const A = ENG.A, B = ENG.B;
 const name = (cell) => {

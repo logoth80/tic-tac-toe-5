@@ -7,7 +7,7 @@
 
      node qa/make-favicon.mjs                 # report only: what each size would cost, and whether the
                                               # page already holds exactly those bytes
-     node qa/make-favicon.mjs --write         # write them into match5.html (between the markers)
+     node qa/make-favicon.mjs --write         # write them into index.html (between the markers)
      node qa/make-favicon.mjs --sizes 16,32,48   # a different set (PWA tiles, taskbar)
 
    The default set is 16 and 32: what a tab asks for at 1x and at 2x. Nothing in the page links a
@@ -19,7 +19,7 @@ import path from 'node:path';
 import { faviconBytes, faviconBlock, FAVICON_START, FAVICON_END } from '../tests/ico-png.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const PAGE = path.join(ROOT, 'match5.html');
+const PAGE = path.join(ROOT, 'index.html');
 const ICO = path.join(ROOT, 'match5.ico');
 
 const argv = process.argv.slice(2);
@@ -52,7 +52,7 @@ const current = at < 0 ? null : page.slice(at, end + FAVICON_END.length);
 if (current === null) {
   console.log('  the page holds no icon block yet');
 } else {
-  console.log('  the page holds ' + current.length + ' bytes of icon block: ' +
+  console.log('  the page holds ' + Buffer.byteLength(current) + ' bytes of icon block: ' +
     (current === block ? 'identical to what ' + path.basename(ICO) + ' produces' : 'IT DRIFTED - re-run this with --write'));
 }
 
@@ -72,5 +72,8 @@ if (current !== null) {
   out = lines.join(eol);
 }
 fs.writeFileSync(PAGE, out, 'utf8');
-console.log('  wrote ' + path.relative(ROOT, PAGE) + ': ' + page.length + ' -> ' + out.length +
-  ' bytes (+' + (out.length - page.length) + ')');
+/* Byte counts, not character counts: the page holds multi-byte characters, so a character count is a
+   smaller number than the file and is not what a directory listing or a download will show. */
+console.log('  wrote ' + path.relative(ROOT, PAGE) + ': ' + Buffer.byteLength(page) + ' -> ' +
+  Buffer.byteLength(out) + ' bytes (+' + (Buffer.byteLength(out) - Buffer.byteLength(page)) +
+  '; the block itself is ' + Buffer.byteLength(block) + ')');

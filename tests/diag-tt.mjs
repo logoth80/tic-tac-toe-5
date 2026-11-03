@@ -3,7 +3,7 @@
    one worker per spare core - multiplies that cost by the core count. The engine bounds the
    table by dropping it when it gets too large; this measures how large it grows inside a real
    search at a real clock, what one entry costs in bytes, and what the bound therefore means
-   for a whole pool. Nothing here is a guess: the cap is read out of match5.html.
+   for a whole pool. Nothing here is a guess: the cap is read out of index.html.
 
      node --expose-gc tests/diag-tt.mjs        longest clock (10 s), ceiling 16 plies
      node --expose-gc tests/diag-tt.mjs 3000 10   a shorter clock, e.g. Expert
@@ -11,7 +11,7 @@
    Prints the depth reached, nodes, table entries and their share of visited positions, the
    measured bytes per entry, and the footprint of one worker and of a pool of them. */
 import fs from 'node:fs';
-const html = fs.readFileSync(new URL('../match5.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const block = html.match(/\/\*__ENGINE_START__\*\/([\s\S]*?)\/\*__ENGINE_END__\*\//);
 const Match5Engine = eval('(' + block[1].trim() + ')');
 const ENG = Match5Engine();

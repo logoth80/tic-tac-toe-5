@@ -83,7 +83,7 @@ await send('Page.addScriptToEvaluateOnNewDocument', { source: `
 
 /* What a previous run left behind lives in the file's own origin, so it has to be cleared there and
    the page loaded again: clearing it in about:blank would clear nothing. */
-await send('Page.navigate', { url: fileUrl('match5.html') });
+await send('Page.navigate', { url: fileUrl('index.html') });
 await sleep(1000);
 console.log('  a previous run had kept: ' + await evaluate("JSON.stringify(JSON.parse(localStorage.getItem('match5.prefs.v1')||'null'))"));
 await evaluate("localStorage.removeItem('match5.prefs.v1'); 'cleared'");

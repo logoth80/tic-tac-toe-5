@@ -698,7 +698,7 @@ if (!zoom.w || !zoom.h) iconFails.push('the icons would not compose into a pictu
 /* ---------- remembered settings, measured on the shipped file with a real reload ----------
    The values are put in through the real controls, then the page is left and come back to,
    because "remembered for new sessions" is only true if a new document asks for them again.
-   The shipped match5.html is used here, not the probe page: the probe sets levels from the URL
+   The shipped index.html is used here, not the probe page: the probe sets levels from the URL
    hash, which would hide what the page restored by itself. */
 await evaluate("var s=document.getElementById('sizeSel'); s.value='31'; s.dispatchEvent(new Event('change',{bubbles:true})); 'size 31'");
 await sleep(1200);
@@ -710,7 +710,7 @@ await sleep(600);
 console.log('what the page wrote down: ' + await evaluate("localStorage.getItem('match5.prefs.v1')"));
 await send('Page.navigate', { url: 'about:blank' });
 await sleep(500);
-await send('Page.navigate', { url: fileUrl('match5.html') });
+await send('Page.navigate', { url: fileUrl('index.html') });
 await sleep(2000);
 const restoredPrefs = await evaluate(
   "(function(){return JSON.stringify({size:document.getElementById('sizeSel').value," +
@@ -730,7 +730,7 @@ await shot('board-remembered.png');
 await evaluate("localStorage.setItem('match5.prefs.v1','{not json'); 'corrupt'");
 await send('Page.navigate', { url: 'about:blank' });
 await sleep(400);
-await send('Page.navigate', { url: fileUrl('match5.html') });
+await send('Page.navigate', { url: fileUrl('index.html') });
 await sleep(2000);
 const corruptPrefs = await evaluate(
   "(function(){return JSON.stringify({size:document.getElementById('sizeSel').value," +

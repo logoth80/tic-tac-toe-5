@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { readMp3 } from './mp3-info.mjs';
 import { faviconBytes, faviconBlock } from './ico-png.mjs';
 
-const html = fs.readFileSync(new URL('../match5.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 let fails = 0, checks = 0;
 const ok = (c, m) => { checks++; if (!c) { fails++; console.log('  FAIL ' + m); } };
 
@@ -173,7 +173,7 @@ ok(external.length === 0, 'the markup reaches outside the file for: ' + external
     const want = html.replace(seam, (_, nl) =>
       '</script>' + nl + '<script>' + nl + src.replace(/\r?\n/g, nl) + nl + '</script></body>');
     const got = fs.readFileSync(probeUrl, 'utf8');
-    ok(got === want, 'qa/probe.html is a copy of an older match5.html (' + got.length + ' bytes against ' + want.length +
+    ok(got === want, 'qa/probe.html is a copy of an older index.html (' + got.length + ' bytes against ' + want.length +
       ' built) - run: node qa/make-probe.mjs');
     ok(/QA probe \(not shipped\)/.test(got) && /probeStatus/.test(got), 'the built copy lost the probe script it exists to carry');
   }

@@ -1,7 +1,7 @@
-// Headless QA for the MATCH 5 engine extracted straight out of match5.html
+// Headless QA for the MATCH 5 engine extracted straight out of index.html
 import fs from 'node:fs';
 
-const html = fs.readFileSync(new URL('../match5.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const block = html.match(/\/\*__ENGINE_START__\*\/([\s\S]*?)\/\*__ENGINE_END__\*\//);
 if (!block) { console.error('ENGINE markers not found'); process.exit(1); }
 const Match5Engine = eval('(' + block[1].trim() + ')');

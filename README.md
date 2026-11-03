@@ -1,9 +1,13 @@
 # Match-5
 
 Five in a row — horizontally, vertically or on either diagonal — on a 25×25 grid,
-for zero, one or two players. The whole product is **`match5.html`**: game, UI and
-search engine in a single file with no dependencies and no build step. Open it in
-a browser.
+for zero, one or two players. The whole product is **`index.html`**: game, UI and
+search engine in a single file with no dependencies and no build step.
+
+Play it at **<https://logoth80.github.io/tic-tac-toe-5/>**, or open the file in a browser — see
+[Served, not just opened](#served-not-just-opened) for what keeps those the same page. The file is
+named `index.html` rather than after the game so that the address needs nothing after the repository
+name; `match5.ico` keeps the game's name because it is the project's mark, not the page.
 
 ## Controls
 
@@ -251,7 +255,7 @@ readings is **constant** rather than claiming either one is the file's true leng
 the audio device's sample rate as a property of the file either. One caveat that follows from a
 single-file page: paths resolve against the page, so the copy in `qa/` that the browser gates drive
 cannot find `sounds/` and says so in the console while still playing — which is why the sound gate and
-the remembered-settings gate run against `match5.html` itself.
+the remembered-settings gate run against `index.html` itself.
 
 Legibility was measured from the pixels the game produced, not from the values in the stylesheet.
 `node qa/ui-check.mjs` histograms the canvas of each theme, takes the dominant colour as the
@@ -321,6 +325,57 @@ already drawn in it, the sound box still off, `movesAtStart 0` and an empty log.
 `{not json` into the key and reloads: the page comes back at 25×25, Hard and Slate, with the sound
 on as it ships, rewrites the entry cleanly, and reports no errors. The sound round-trip is a gate: a
 checkbox that came back the other way is a setting that was not remembered.
+
+## Served, not just opened
+
+The repository is published as a site: Pages is enabled for it with **main / root** as the source, so
+<https://logoth80.github.io/tic-tac-toe-5/> is the game itself — no build step, no action, nothing to
+run first. The file had to be called `index.html` for that address to resolve at all; a page called
+`match5.html` would have needed its name typed after the repository's. The old name is not kept
+alongside the new one — two copies of the page is the fault every other gate in this repository exists
+to prevent — and the history follows the rename, which Git recorded as one rather than as a deletion
+and an addition.
+
+`node qa/site-check.mjs` is the gate for it, and it asks three questions in the order where a failure
+is most useful:
+
+- **the same thing**: the bytes the site serves hash to the hash of `index.html` here. That catches a
+  build step rewriting something, and it catches the quieter version — a site quietly still on an older
+  build, which is the same fault as a hand-kept copy of the page. When they differ, the first differing
+  byte is printed with what surrounds it, because the interesting part of a mangled HTML file is what
+  took the place of the bytes that went away;
+- **all the parts**: every one of the five clips is fetched from the address a page *under a subpath*
+  resolves to, and each is the file in this repository. A single-file page is allowed to lose its
+  sounds and stay playable; a site that never had them is a different thing and should say so;
+- **it plays there**: the deployed page is opened in the QA browser at the address **without** the
+  trailing slash — the case where relative paths go wrong, because they are resolved against the page's
+  own address — marks are drawn with real clicks, the game has to count them as its own moves, the
+  pencil has to start, and the browser's resource records have to show the clips arriving over https.
+  That last part is what no `file://` run in this repository can show at all.
+
+It is the only gate here that needs a network. When the site cannot be reached it prints `SKIP` and
+exits 0, because having no route is not evidence about the page; a site that answers with wrong bytes,
+an error status, or a page that will not play carries an exit code. A push and a deploy are not the
+same instant, so on a mismatch it waits up to a minute for GitHub to catch up before failing — that
+part is written down so nobody mistakes a deploy in progress for a broken page.
+
+Two settings make the served thing the repository thing, and both were checked rather than assumed.
+`.nojekyll` asks Pages to copy the tree instead of building it with Jekyll, and it turned out not to be
+a theoretical precaution: the first run of `qa/site-check.mjs`, before that file existed, found the
+site's root answering 200 with **63,065 bytes of HTML that is this README rendered as a page** —
+sha256 `3665ac0446da…` against the game's `0a736514dd3e…`, and the first differing byte printed with
+what surrounds it. With no `index.html` in the tree, the build put the repository's own description at
+the address a player would type. Once the page is named `index.html` even a Jekyll build would serve
+it, so what `.nojekyll` really buys is that nothing sits between this file and a stranger's browser:
+the page holds no Liquid token today (measured: zero `{{`, zero `{%`), so no *current* line of it is at
+risk, and the risk that is left — a future edit that reads like a template — is exactly what the byte
+gate would catch, though only after the page had been published wrong once. And the page holds no absolute path, no origin and no external
+reference of any kind: reading it for `src="/`, `location.origin` and for any `http://` returns
+nothing, which is what lets one file sit in a folder, on a subpath, or at a root without knowing the
+difference.
+
+What that section cannot show, and does not claim: what the page looks like on a phone, or in a browser
+this machine does not have; and that anyone has seen it.
 
 ## Tests
 
@@ -400,16 +455,19 @@ The page carries the tab icon, and it carries this mark rather than a second dra
 `qa/make-favicon.mjs` reads the 16 and 32 px frames out of `match5.ico` (`tests/ico-png.mjs` does the
 reading and the re-containing: no libraries, an ICO reader and a minimal PNG writer) — 32-bit bitmaps,
 whose alpha channel holds the real transparency and whose AND masks turn out to be all zero (measured,
-both) — and writes them into `match5.html` as PNG data URIs, one `<link rel="icon" sizes="…">` per
+both) — and writes them into `index.html` as PNG data URIs, one `<link rel="icon" sizes="…">` per
 size, so a browser picks the frame that matches the tab it is drawing instead of scaling one down. The
 bytes come out of the .ico instead of being typed in beside it, which is what keeps the tab and the
 shell one identity: `tests/file-check.mjs` re-derives them and fails when the page stops holding what
 `match5.ico` produces — the same shape as the gate for the built browser copy, which once went
-unnoticed for a whole round of changes. Measured cost: 864 and 1,958 bytes of PNG, 3,764 of base64,
-4,417 bytes added to a 128,906-byte page, about 3.4%. All nine frames as data would be 76,787 bytes,
-which is why only the two sizes a tab asks for are carried — and why the gate also fails past 8,192
-bytes, so that spending a quarter of the page on a picture the size of a fingernail has to be decided
-and not drift.
+unnoticed for a whole round of changes. Measured cost, in bytes: 864 and 1,958 for the two PNGs, 3,764
+of base64, 4,416 for the block the page holds plus the line break it sits on — 4,417 bytes added to a
+129,012-byte page, about 3.4%, and the page is 133,429 bytes now. (Those are byte counts, deliberately:
+the tools print them as bytes because the page itself holds multi-byte characters — a character count
+for the same file is 133,323, a hundred-odd smaller, and it is not the number a download or a directory
+listing shows.) All nine frames as data would be 76,787 bytes, which is why only the two sizes a tab
+asks for are carried — and why the gate also fails past 8,192 bytes, so that spending a quarter of the
+page on a picture the size of a fingernail has to be decided and not drift.
 
 `node qa/make-favicon.mjs` reports what each size would cost and whether the page holds exactly those
 bytes; `--write` writes them; `--sizes` asks for others. `match5.ico` has no 48 px frame and the tool
@@ -465,19 +523,20 @@ start chrome --headless=new --remote-debugging-port=9333 `
 Then build the probe page and run the pass:
 
 ```powershell
-node qa/make-probe.mjs      # qa/probe.html = match5.html + qa/probe.js, injected before </body>
-node qa/make-favicon.mjs    # says whether the tab icon in match5.html is still what match5.ico produces; --write writes it
+node qa/make-probe.mjs      # qa/probe.html = index.html + qa/probe.js, injected before </body>
+node qa/make-favicon.mjs    # says whether the tab icon in index.html is still what match5.ico produces; --write writes it
 node qa/cdp-drive.mjs
+node qa/site-check.mjs       # the address, not this folder: same bytes, all the parts, a game played there
 ```
 
 The copy is **built, not kept**. It used to be updated by hand, and it drifted: a whole round of
 changes to how marks are drawn went untested because the gate was measuring a page that still drew the
 marks that used to be. `tests/file-check.mjs` now fails if `qa/probe.html` is not exactly
-`match5.html` plus that script, and says to run `qa/make-probe.mjs` — so the copy cannot be behind the
+`index.html` plus that script, and says to run `qa/make-probe.mjs` — so the copy cannot be behind the
 game it is a copy of. One consequence of a single-file page is worth knowing before reading a log: a
 path in the game resolves against the page that runs it, so the copy in `qa/` looks for `sounds/`
 inside `qa/` and reports those files missing. It still plays. Anything that reads files by path — the
-sound gate, the remembered-settings gate — runs against `match5.html` itself.
+sound gate, the remembered-settings gate — runs against `index.html` itself.
 
 `qa/probe.js` accepts hash cases in the URL (`#fast`, `#easy`, `#hard`, `#expert`,
 `#master`, `#pvp`, `#d0`, `#d12`) to pin mode, level and look-ahead. Its status
@@ -522,7 +581,7 @@ drew — within 12/255 of the declared felt, which is the claim that a drawn boa
 the contrast of every mark against that surface, sampled from the drawing rather than from the
 stylesheet. The
 remembered settings are
-tested on the shipped `match5.html` rather than on the probe page, because the probe pins the
+tested on the shipped `index.html` rather than on the probe page, because the probe pins the
 levels from the URL hash and would hide what the page restored by itself. For the eye it writes
 `qa/log-look.png`, `qa/settings-open.png`, `qa/board-slate.png`, `qa/board-paper.png`,
 `qa/board-paper-winner.png` (a finished game, so the red five is in the frame) and
@@ -563,7 +622,7 @@ it.
 is asked for and starts, the length Chrome reports is compared with the length counted in frames and
 required to differ by the *same* offset for all five, a move plays exactly one clip, and nothing is
 logged to the console as an error. It needs the same Chrome as the other browser gates, and it runs
-against `match5.html` rather than the copy in `qa/` because the clips are found by path.
+against `index.html` rather than the copy in `qa/` because the clips are found by path.
 
 ### What the pool was measured to do (the machine used for development: 16 logical cores)
 

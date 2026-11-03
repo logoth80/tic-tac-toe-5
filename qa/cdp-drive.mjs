@@ -211,7 +211,7 @@ async function main() {
   errors.length = 0;
   await send('Page.navigate', { url: 'about:blank' });
   await sleep(400);
-  await send('Page.navigate', { url: 'file:///' + path.join(ROOT, 'match5.html').replace(/\\/g, '/') });
+  await send('Page.navigate', { url: 'file:///' + path.join(ROOT, 'index.html').replace(/\\/g, '/') });
   await sleep(2500);
   console.log('  turn: ' + (await status(true)));
   console.log('  js errors: ' + (errors.length ? errors.join(' | ') : 'none'));

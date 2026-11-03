@@ -236,7 +236,7 @@ await send('Page.enable');
 await send('Runtime.enable');
 await send('Page.navigate', { url: 'about:blank' });
 await sleep(300);
-await send('Page.navigate', { url: fileUrl('match5.html') });
+await send('Page.navigate', { url: fileUrl('index.html') });
 await sleep(1500);
 await evaluate("(function(){document.querySelector('#modeSeg button[data-mode=\"pvp\"]').click();" +
   "var s=document.getElementById('sizeSel');s.value='" + SIZE + "';s.dispatchEvent(new Event('change',{bubbles:true}));return 'set';})()");

@@ -5,24 +5,27 @@
    copy is built here, from the file it is supposed to be a copy of, and tests/file-check.mjs fails
    when the two are not the same.
 
-     node qa/make-probe.mjs             rebuild qa/probe.html from match5.html + qa/probe.js
+     node qa/make-probe.mjs             rebuild qa/probe.html from index.html + qa/probe.js
      node qa/make-probe.mjs --extract   pull the probe script out of an existing hand-made copy,
                                         writing it back over qa/probe.js (only for re-starting from
                                         a copy someone edited by hand)
 
    One thing to know about the copy: a path written in the game resolves against the *directory of
    the page that runs it*, so qa/probe.html would look for sounds/ inside qa/. Anything that reads
-   files by path - the sound gate, the remembered-settings gate - is run against match5.html, not
+   files by path - the sound gate, the remembered-settings gate - is run against index.html, not
    against this copy. */
 import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const GAME = path.join(ROOT, 'match5.html');
+const GAME = path.join(ROOT, 'index.html');
 const OUT = path.join(ROOT, 'qa', 'probe.html');
 const SCRIPT = path.join(ROOT, 'qa', 'probe.js');
 const MARK = '/* QA probe (not shipped)';
 const CLOSE = '</script></body>';
+/* Sizes are printed as bytes. This page holds multi-byte characters - the em dashes, the ✕ and the ○ -
+   so a character count is smaller than the file and is not the number a directory listing shows. */
+const B = (s) => Buffer.byteLength(s);
 
 if (process.argv.includes('--extract')) {
   const probe = fs.readFileSync(OUT, 'utf8');
@@ -35,7 +38,7 @@ if (process.argv.includes('--extract')) {
     const inner = probe.slice(from + 1, to + '</script>'.length)
       .replace(/^<script>\r?\n/, '').replace(/\r?\n<\/script>$/, '') + '\n';
     fs.writeFileSync(SCRIPT, inner);
-    console.log('took ' + inner.length + ' bytes of probe script out of qa/probe.html and wrote qa/probe.js');
+    console.log('took ' + B(inner) + ' bytes of probe script out of qa/probe.html and wrote qa/probe.js');
     console.log('  it starts: ' + inner.split('\n')[0].slice(0, 70));
     console.log('  it ends:   ' + inner.split('\n').filter(Boolean).pop());
   }
@@ -47,13 +50,13 @@ if (process.argv.includes('--extract')) {
   } else {
     const src = fs.readFileSync(SCRIPT, 'utf8').replace(/\s+$/, '');
     const seam = /<\/script>(\r?\n)(<\/body>)/;
-    if (!seam.test(game)) { console.log('match5.html does not end the way this expects ("</script>" then "</body>")'); process.exitCode = 1; }
+    if (!seam.test(game)) { console.log('index.html does not end the way this expects ("</script>" then "</body>")'); process.exitCode = 1; }
     const out = game.replace(seam, (_, nl) =>
       '</script>' + nl + '<script>' + nl + src.replace(/\r?\n/g, nl) + nl + '</script></body>');
     const was = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
     fs.writeFileSync(OUT, out);
     const changed = (a, b) => { const x = a.split('\n'), y = b.split('\n'); let d = 0; for (let i = 0; i < Math.max(x.length, y.length); i++) if (x[i] !== y[i]) d++; return d; };
-    console.log('built qa/probe.html from match5.html (' + game.length + ' + ' + src.length + ' = ' + out.length + ' bytes)');
-    if (was) console.log('  replaced a copy of ' + was.length + ' bytes; ' + changed(was, out) + ' of its lines differ from the previous one');
+    console.log('built qa/probe.html from index.html (' + B(game) + ' + ' + B(src) + ' = ' + B(out) + ' bytes)');
+    if (was) console.log('  replaced a copy of ' + B(was) + ' bytes; ' + changed(was, out) + ' of its lines differ from the previous one');
   }
 }

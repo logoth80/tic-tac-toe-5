@@ -70,7 +70,7 @@ async function main() {
 
   await send('Runtime.enable');
   await send('Page.enable');
-  await send('Page.navigate', { url: 'file:///' + path.join(ROOT, 'match5.html').replace(/\\/g, '/') });
+  await send('Page.navigate', { url: 'file:///' + path.join(ROOT, 'index.html').replace(/\\/g, '/') });
   await sleep(1200);
 
   const realCores = await evaluate('navigator.hardwareConcurrency');

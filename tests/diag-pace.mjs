@@ -2,7 +2,7 @@
 // Prints, for every move, whether the answer was a forced tactic, the depth reached,
 // nodes, ms, and whether a genuine five-completion really existed at that moment.
 import fs from 'node:fs';
-const html = fs.readFileSync(new URL('../match5.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const block = html.match(/\/\*__ENGINE_START__\*\/([\s\S]*?)\/\*__ENGINE_END__\*\//);
 const Match5Engine = eval('(' + block[1].trim() + ')');
 const ENG = Match5Engine();

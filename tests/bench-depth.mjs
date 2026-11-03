@@ -1,6 +1,6 @@
 // Branch-factor / budget sweep on a quiet 25x25 midgame, to tune LEVELS.
 import fs from 'node:fs';
-const html = fs.readFileSync(new URL('../match5.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const block = html.match(/\/\*__ENGINE_START__\*\/([\s\S]*?)\/\*__ENGINE_END__\*\//);
 const Match5Engine = eval('(' + block[1].trim() + ')');
 const ENG = Match5Engine();

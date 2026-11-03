@@ -2,7 +2,7 @@
 // The enemy holds an open three with both ends free; nothing else is in reach for us.
 // Prints what both sides' searches report, so the proof-handling contract is visible.
 import fs from 'node:fs';
-const html = fs.readFileSync(new URL('../match5.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const block = html.match(/\/\*__ENGINE_START__\*\/([\s\S]*?)\/\*__ENGINE_END__\*\//);
 const Match5Engine = eval('(' + block[1].trim() + ')');
 const ENG = Match5Engine();

@@ -127,7 +127,7 @@ else:
     print('red stroke: none found with that predicate')
 
 
-# The theme as it is written into match5.html, checked against the picture's own numbers. The bar
+# The theme as it is written into index.html, checked against the picture's own numbers. The bar
 # is WCAG's: 4.5:1 for text, 3:1 for a graphic object such as a stone. The grid is a graphic
 # object too, but one that is meant to recede, so its number is reported rather than judged.
 CAND = {

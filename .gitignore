@@ -8,5 +8,5 @@ qa/*.png
 qa/chrome-err.txt
 qa/*.txt
 
-# Generated: match5.html with qa/probe.js injected before </body> (see README)
+# Generated: index.html with qa/probe.js injected before </body> (see README)
 qa/probe.html
