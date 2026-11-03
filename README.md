@@ -377,6 +377,26 @@ difference.
 What that section cannot show, and does not claim: what the page looks like on a phone, or in a browser
 this machine does not have; and that anyone has seen it.
 
+Measured on the run that first passed, 11 checks. The address answers 200, `text/html`, 133,429 bytes,
+sha256 `0a736514dd3e…` — this file. All five clips answer 200 at `/tic-tac-toe-5/sounds/…` with the
+repository's own bytes (4,845 / 6,285 / 6,285 / 6,765 / 5,325). The address *without* the trailing slash
+is answered by GitHub with a redirect to the directory, so the page's relative paths resolve where the
+files are; that is now an observation rather than an assumption, and the browser's resource records —
+every one of them under `/tic-tac-toe-5/sounds/` — are the evidence. An earlier run of the same script
+showed those clips arriving over https with about 300 bytes of headers apiece (6,585 transferred for a
+6,285-byte file, 150 ms), and the run after it read three of them out of the HTTP cache instead at 0
+bytes and 1 ms, which is the same request answered twice and worth knowing before anyone reads a timing
+here as a speed measurement. On the page the site served: a board of 14 grid lines at a 56 px pitch on a
+760×760 canvas, five real clicks that the game counted as five of its own moves, and five pencil sounds
+that started.
+
+The gate's first version got that last claim wrong, and it is worth keeping in the record because the
+site was fine and the check was not: a regular expression meant to print the path root handed back the
+whole URL, so the comparison against `/tic-tac-toe-5` failed on a site that had served every clip under
+exactly that directory. The claim is stated directly now — each recorded path begins with the directory
+the site itself is in — which is both simpler to read and true for a domain-root stand-in, where that
+directory is empty.
+
 ## Tests
 
 All plain Node (no packages, no test runner; developed on Node v24):

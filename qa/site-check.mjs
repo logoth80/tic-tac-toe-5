@@ -176,6 +176,10 @@ await send('Page.addScriptToEvaluateOnNewDocument', { source: `
 /* Deliberately the address without the trailing slash: relative paths are resolved against the page's
    own address, so this is the case where a page under a subpath can lose its sounds. */
 const noSlash = SITE.replace(/\/$/, '');
+/* The directory the site itself is in: /tic-tac-toe-5 for a project site, '' for a domain root or a
+   local stand-in. The page's relative paths are resolved against it, and that is what the last claim
+   measures rather than assumes. */
+const base = new URL(SITE).pathname.replace(/\/+$/, '');
 console.log('\nopening ' + noSlash + ' (no trailing slash) in the browser');
 await send('Page.navigate', { url: noSlash });
 await sleep(2500);
@@ -237,17 +241,25 @@ ok(asked.length === PLAY.length && asked.every((a) => a.played),
   'the pencil plays there too (' + asked.filter((a) => a.played).length + '/' + asked.length + ' started)');
 const fromNetwork = (await jsonEval("JSON.stringify(performance.getEntriesByType('resource')" +
   ".filter(function(e){return /sounds\\//.test(e.name);})" +
-  ".map(function(e){return {name:e.name.replace(location.origin,''),type:e.initiatorType,bytes:e.transferSize," +
-  "ms:Math.round(e.duration),from:e.name.replace(/^(https?:\\/\\/[^/]+\\/[^/]+)\\.*/, '$1')};}))",
+  ".map(function(e){return {name:new URL(e.name).pathname,type:e.initiatorType,bytes:e.transferSize," +
+  "ms:Math.round(e.duration)};}))",
   'the browser\'s own record of the sound requests')) || [];
 fromNetwork.forEach((e) => console.log('   resource: ' + e.name + '  initiator ' + e.type + '  ' + e.bytes +
-  ' bytes transferred  ' + e.ms + ' ms  path root ' + e.from));
+  ' bytes transferred  ' + e.ms + ' ms'));
 const arriving = fromNetwork.filter((e) => /marker-[xo]\d\.mp3$/.test(e.name));
+const distinct = new Set(arriving.map((e) => e.name)).size;
 console.log('  ' + fromNetwork.length + ' sound requests on the record, ' + arriving.length +
-  ' of them for a clip, ' + arriving.filter((e) => e.bytes > 0).length + ' fetched rather than read from a cache');
+  ' of them for a clip (' + distinct + ' distinct files - one clip was drawn twice), ' +
+  arriving.filter((e) => e.bytes > 0).length + ' fetched rather than read from a cache');
 ok(arriving.length >= 1, 'the page asked the network for its clips, which a page opened from the disk cannot show');
-ok(arriving.every((e) => e.from === '/' + new URL(SITE).pathname.split('/').filter(Boolean)[0]),
-  'and asked under this subpath, not at the root of the site - which is what the missing slash would break');
+/* The claim, stated directly: every clip was asked for under the directory the site itself is in. A page
+   at /tic-tac-toe-5 with no trailing slash resolves sounds/ at the site root instead, and this is what
+   would notice. Measured on the real site, GitHub answers that address with a redirect to the directory,
+   so the browser resolves where the files actually are - and the record above is the proof, not the
+   assumption. */
+const under = arriving.filter((e) => e.name.startsWith(base + '/sounds/'));
+ok(arriving.length > 0 && under.length === arriving.length,
+  'and every one was asked for under ' + (base || '(the site root)') + '/sounds/, where the files are');
 
 /* Leave nothing remembered, so a person opening the real site afterwards does not find a board size a
    test picked. */
