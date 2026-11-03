@@ -3,6 +3,7 @@
 // be DOM-free so Match5Engine.toString() can be shipped into a Web Worker.
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { readMp3 } from './mp3-info.mjs';
 
 const html = fs.readFileSync(new URL('../match5.html', import.meta.url), 'utf8');
 let fails = 0, checks = 0;
@@ -145,6 +146,83 @@ ok(!/<link\b|<script[^>]+\bsrc=/i.test(html), 'file must not depend on external 
   const logCss = (html.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];
   ok(/\.log \{[^}]*overflow-anchor: none/.test(logCss),
     'the log list must opt out of browser scroll anchoring, or the reader is moved twice');
+}
+
+/* ---- qa/probe.html is a built copy, not a hand-maintained one. The browser gates drive it because
+        it carries a script that lets them read the panel; it has to be the shipped file apart from
+        that script. Kept up by hand it drifts - one round of changes to how marks are drawn went
+        untested because the gate was measuring a page that still drew the marks that used to be. ---- */
+{
+  const blockUrl = new URL('../qa/probe.js', import.meta.url);
+  const probeUrl = new URL('../qa/probe.html', import.meta.url);
+  ok(fs.existsSync(blockUrl), 'qa/probe.js is missing - the script the built copy carries');
+  ok(fs.existsSync(probeUrl), 'qa/probe.html is missing - the browser gates drive it');
+  if (fs.existsSync(blockUrl) && fs.existsSync(probeUrl)) {
+    const src = fs.readFileSync(blockUrl, 'utf8').replace(/\s+$/, '');
+    const seam = /<\/script>(\r?\n)(<\/body>)/;
+    ok(seam.test(html), 'the game must close a script block just before </body>, which is where the probe script belongs');
+    const want = html.replace(seam, (_, nl) =>
+      '</script>' + nl + '<script>' + nl + src.replace(/\r?\n/g, nl) + nl + '</script></body>');
+    const got = fs.readFileSync(probeUrl, 'utf8');
+    ok(got === want, 'qa/probe.html is a copy of an older match5.html (' + got.length + ' bytes against ' + want.length +
+      ' built) - run: node qa/make-probe.mjs');
+    ok(/QA probe \(not shipped\)/.test(got) && /probeStatus/.test(got), 'the built copy lost the probe script it exists to carry');
+  }
+}
+
+/* ---- the marker that says which mark was placed last takes the shape of that mark: a circle around
+        the round one, the ends of the outline - strokes across each arm - around a cross. The only
+        number in it is how far out that outline stands, and the working window is narrow. Measured on
+        the shipped default board, where a cell is 28px: brought in to 0.03 of a cell a cross's caps
+        merge into its tips and read as a heavier mark; out at 0.07 they reach 2.7px past the
+        square's edge and stop looking like part of it. The clearances that are not that number are
+        derived from the mark's own edge, so a change to the mark cannot quietly move the marker away
+        from it. ---- */
+{
+  const fn = (html.match(/function drawLastMark[\s\S]*?\n  \}/) || ['', ''])[0];
+  ok(fn.length > 0, 'could not locate drawLastMark');
+  const gap = Number((html.match(/const LAST_GAP = ([0-9.]+);/) || [])[1]);
+  ok(gap >= 0.04 && gap <= 0.06, 'the last-move marker must stand a named 0.04-0.06 of a cell clear of the mark, found ' +
+    ((html.match(/const LAST_GAP = [^;]*/) || ['(none)'])[0]));
+  ok(/player === B/.test(fn) && /ctx\.arc\(x, y, out \+ gap, 0, Math\.PI \* 2\)/.test(fn),
+    'the round mark is marked with a circle at its own edge plus the clearance, which is the shape the reader already knows');
+  ok(/for \(const \[dx, dy\] of \[\[1, 1\], \[1, -1\], \[-1, -1\], \[-1, 1\]\]\)/.test(fn) && /Math\.SQRT2/.test(fn),
+    'a cross must be marked at its four arm ends, measured along its own arms');
+  ok(!/cell \* 0\.[0-9]/.test(fn), 'the marker is built from the mark\'s edge, not from a radius written out (the hint ring at 0.42 marks an empty square and is a different thing)');
+  ok(/if \(c === last\) drawLastMark\(x, y, p\)/.test(html), 'the deciding move must stay marked after the game ends');
+  ok(/const MARK_EXTENT = 0\.43;/.test(html) && /out = cell \* MARK_EXTENT/.test(fn),
+    'the mark\'s outside edge is written down once and both the mark and its marker are built from it');
+}
+
+/* ---- the mark sounds. Five short pencil scratches sit beside the page; one of its side's clips is
+        picked when a mark is drawn. The paths are read from the page and opened here, because a
+        missing folder or a mis-typed name is exactly the kind of thing that survives a review of the
+        source and fails on the way home. Nothing is asked for before a mark exists, and every play is
+        guarded, so a browser that will not start sound before the page has been touched, or a
+        sounds/ folder that did not
+        come with the html, costs silence rather than a broken page. ---- */
+{
+  const fam = (html.match(/const SCRATCH = \{([\s\S]*?)\};/) || ['', ''])[1];
+  ok(fam.length > 0, 'could not locate the SCRATCH list');
+  const listFor = (side) => [...((fam.match(new RegExp(side + ':\\s*\\[([^\\]]*)\\]')) || ['', ''])[1].matchAll(/'([^']+)'/g))].map((m) => m[1]);
+  const xClips = listFor('x'), oClips = listFor('o');
+  ok(xClips.length >= 2 && oClips.length >= 2, 'each side needs a family of clips so the same scratch is not heard twice running (x ' + xClips.length + ', o ' + oClips.length + ')');
+  for (const [side, clips] of [['x', xClips], ['o', oClips]]) {
+    for (const p of clips) {
+      ok(p.includes('-' + side), 'a clip played for ' + side + ' is named after the other side: ' + p);
+      const file = new URL('../' + p, import.meta.url);
+      if (!fs.existsSync(file)) { ok(false, 'the page names ' + p + ', which is not beside it'); continue; }
+      const m = readMp3(file);
+      ok(m && m.sampleRate > 0, p + ' does not read as an MP3 from its frame headers: ' + JSON.stringify(m));
+      if (m && m.seconds) ok(m.seconds > 0.05 && m.seconds < 1, p + ' runs ' + m.seconds.toFixed(3) + 's - a mark sound is a scratch, not a clip');
+    }
+  }
+  ok((html.match(/new Audio\(/g) || []).length === 1, 'sound is created at one place only, when a mark is drawn');
+  const au = html.indexOf('new Audio('), start = html.indexOf('function scratch('), end = html.indexOf('function afterMove(');
+  ok(start >= 0 && au > start && au < end, 'the one Audio must be created inside scratch(), after the switch and the move');
+  ok(!/<audio\b|\.load\(\)/.test(html), 'nothing may be asked for before a mark is drawn');
+  ok(/if \(!S\.sound\) return/.test(html) && /clip\.play\(\)\.catch/.test(html),
+    'a switch that is off, a browser that refuses sound before the first touch, or a missing folder costs silence');
 }
 
 console.log(fails ? '\nFAILED ' + fails + ' of ' + checks : '\nPARSE/STRUCTURE OK — ' + checks + ' checks');

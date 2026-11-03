@@ -16,10 +16,12 @@ a browser.
 | Look ahead · Move width · Time per move | these three live in **Search settings — advanced**, folded by default and placed last. Pinning any of them overrides what the level menu promises; the summary line of the collapsed panel states what is pinned |
 | Engine report | what the last search actually did — which engine made it (written in that player's colour), how deep it got, positions looked at, the time, how many workers answered, why it stopped, and the distance to a five when the outcome is proven |
 | Decision log | under the board, as wide as it is: every engine decision, and every move you make, newest at the top and the older ones pushed down. Engine lines are written in the colour of the side that decided, so an answer is still readable after the opponent has moved; your own moves are plain ink. Undo takes the lines back together with the moves |
+| Position bar | under the board, a scale whose zero is in the middle: it grows out of that middle to the right, in ✕'s own colour, while ✕ is ahead, and to the left, in ○'s colour, while ○ is ahead, and it stays empty when the position is level. The number beside it is the same reading, not a second opinion — see [the position bar](#the-position-bar) |
+| Pencil sound | on by default: a short pencil scratch as each mark is drawn, taken at random from the five recordings in `sounds/` — three for ✕, two for ○ — because on paper no two strokes sound identical. One box, and what it says is remembered |
 
-The **board size, the difficulty and the board colour are kept on the computer** and put back
-when the page is opened again — see [what the page remembers](#what-the-page-remembers). A game
-in progress is not kept, and neither is the mode.
+The **board size, the difficulty, the board colour and the sound switch are kept on the computer** and
+put back when the page is opened again — see [what the page remembers](#what-the-page-remembers). A
+game in progress is not kept, and neither is the mode.
 
 ## Strength is a clock
 
@@ -89,6 +91,26 @@ First moves are deliberately varied: the opening choice is randomised over the
 equivalent central squares, and when several moves are measured to be almost as
 good the engine sometimes takes one of them instead of the top one.
 
+What that opening is worth is measured on the shipped levels (`node tests/first-move.mjs --games 100`):
+both sides run the same level, the same clock and the same ply ceiling, so the only asymmetry is who
+moves first. The player who moves first wins **67 of 100** games at Easy (95% interval 57.3–75.4,
+p = 0.0009 against an even split), **58 of 100** at Medium (48.2–67.2, p = 0.1332 — which shows
+nothing in either direction), and **84 of 100** at Hard (75.6–89.9, p = 2.6e-12; the summary keeps
+four decimal places and prints `0.0000`). Kept separate by level, the pooled 300 games come to 209–91
+in the first player's favour, p = 0.0001 by a stratified sign-flip test over 10000 shuffles; none of
+the 300 was drawn. The same record reports the depth the levels reached — means of 2.79, 4.64 and 5.15
+against their 3, 5 and 6 ply ceilings — the ladder doing what the menu says it does. Two things that
+run cannot show, and it says so out loud: the level's worker pool belongs to the page, so both sides
+searched on one core, which lowers absolute strength at Medium and Hard without breaking the symmetry
+the question depends on; and the restrictions free-style gomoku is usually played with — three-three
+and four-four bans, a swap rule — are not in this game, which is why the answer is about the game as
+it is played rather than about the theory that such games favour the first player in principle.
+
+The raw records are `qa/first-move.jsonl` — every game, with its whole move list, written as it
+finishes — and `qa/first-move-summary.md`; that run reads back with
+`node tests/first-move.mjs --report 2026-10-27T12-02-35-200Z` rather than being replayed, which is
+the reason the record is committed.
+
 ## Two boards
 
 The page offers two board colours, **Slate** (the default) and **Paper**. They are not two
@@ -131,6 +153,106 @@ Slate leaves `--winrgb` empty, which the drawing takes to mean "wear the winner'
 That is a stated difference between the themes, not an oversight — a red pen is what the picture
 shows, while a red five on a dark board would be a third hue competing with the two the stones use.
 
+### How thick the pen is
+
+Both marks are drawn with a pen whose width is a fraction of a cell: `--stonpen`, `.075` in both
+themes. The **outside size is not part of that**, and it does not move when the pen does. The request
+was "same outside size, less thickness, more like a pen", and a line with round caps ends half a pen
+short of where it is pointed — so both marks are drawn with their endpoints set at
+`out − pen/2` (`out` being `cell * MARK_EXTENT`, `MARK_EXTENT = 0.43` from the centre to the outside
+edge along a grid axis) and the caps add that half back. The footprint is therefore 0.86 of a cell
+across at any pen width. That is not a theory: when the pen was first thinned, the cross came out
+0.61 of a cell beside the circle's 0.86, because the arms had been drawn to a fixed half-length; they
+are drawn to `out − pen/2` since, and the ask along the way — "make the X lines a little longer too" —
+is that measurement turned into words.
+
+`qa/pen-ab.mjs` draws one position at several thicknesses and measures what came out:
+
+| `--stonpen` | the line it draws at the default 25×25 (a cell is 28–29 px) | the mark's colour, share of its own square |
+| --- | --- | --- |
+| `.14` | 4 px | ○ 29.8% · ✕ 25.0% |
+| `.10` | 3 px | between those |
+| `.075` (shipped) | 2 px | ○ 18.0% · ✕ 15.7% |
+| `.055` | 1–2 px — thinner than a pixel, so it alternates | — |
+
+At 13×13, where a cell is 54–56 px, `.075` draws a 4.2 px line and the extent measures back at
+0.429 of a cell, unclipped. The share of the square counts the anti-aliased halo around the stroke,
+which is larger on Paper (8–17%) than on Slate (0–4%) because a mark there crosses the printed grid
+lines; the two rows are only comparable within a theme. What the reference photo's pen would have
+been cannot be checked: the picture it was taken from is not in the repo and cannot be recovered from
+where it was posted — `qa/find-reference.py` searched 377 stored attachments, and the 42 that show a
+sheet with a grid on it carry no meaningful blue or red. Pen thickness is therefore calibrated against
+the game's own render, which is what the table quotes.
+
+### The marker for the last move
+
+The marker that says which mark was placed last is the outline of that mark: a circle for the round
+mark, as it has always been, and for a cross the four **ends** of that outline — short strokes across
+each arm, facing the corners of the square. One number places it, `LAST_GAP = 0.05` of a cell outside
+the mark's own edge, and both bounds of that number are measured:
+
+- a circle around a cross is the wrong shape, and it is visibly wrong: the tip of a cross's arm
+  reaches 0.593 of a cell while that circle would sit at 0.48, so the mark's own arms cross it;
+- an outline that hugs the arms merges into the mark. At a 28 px cell the clear space between such a
+  pair is 0–1.5 px, which is less than the ink of either line, so it reads as a heavier mark rather
+  than as a marker;
+- brought in to `.03`, a cross's caps merge into its tips (0 px of clear space at a 28 px cell);
+  out at `.07` the outermost ink reaches 2.7 px past the square's edge at that cell — 5.4 px at a
+  79 px one — and the pair stops looking like one mark.
+
+At `.05` the outermost ink of either marker gets 1.6 px past the grid line at a 28 px cell and
+0.3 px at a 56 px one: 0.005 of a cell into the neighbouring square, where a mark's own ink begins
+0.070 in. What separates the marker from the mark at a small cell is the **tone** — the same colour
+at 55%, not at full ink — because a pen half a pixel wide already reaches that far; at a 56 px cell
+there are 2 px of real space as well. `qa/ui-check.mjs` reads the drawing instead of trusting it: it
+finds the mark's centre from the mark's own deep ink, then samples sixteen wedges around it and asks
+for ink at the four directions a cross's arms point and none of the other twelve, and for a whole
+circle at 0.47–0.51 of a cell in all sixteen directions for the round mark. That is exactly the test
+a circle around a cross would fail.
+
+### The position bar
+
+The bar under the board is a scale with its zero in the middle, and it is filled from that middle
+outwards: to the right in ✕'s colour while ✕ is ahead, to the left in ○'s colour while ○ is ahead,
+empty while the position is level. The version it replaced filled from the left edge and was one
+colour, so a level position read as half ✕ and the bar could not say which side was ahead at all —
+which is what it is for. Filling from the middle is also the only shape that matches the number
+printed beside it, since that number is signed the same way. The two halves are anchored at the centre
+tick and only ever change length, so the bar grows and never slides; the fill wears the two marks'
+colours, for the same reason the decision text does — a third hue would compete with the two the
+stones use. The scale is the one the number uses: the difference of the two positional scores,
+saturated by a tanh at ±12 k, so a bar that reaches the end of its half is a position effectively
+decided rather than merely comfortable.
+
+The pass plays a line whose lead changes hands — an open three for ✕ against a two for ○, then ○
+raised to a four with one end against the edge of the board — and reads the laid-out boxes rather than
+the style text. Measured: at a 1.3k lead for ✕ the right half grew and the left stayed at nothing; at
+−5.3k and −5.5k for ○ the left half grew and the right was nothing. Five things have to hold at every
+sample: never both halves, the grown half matches the sign of the printed number, its inner edge stays
+within a pixel of the middle, it never exceeds the half it belongs to, and it never stands past the
+end of the bar.
+
+### The pencil sound
+
+A mark is drawn with a sound, and the sound is a pencil scratching on paper: five recordings sit beside
+the page in `sounds/` — three for ✕, two for ○ — supplied as `marker x1-3.mp3` and `marker o1-2.mp3`
+and kept under those names, lower-cased. Which of a side's clips plays is chosen at random, because on
+paper no two strokes sound alike and the same clip every move is what makes a page like this sound
+synthetic. Nothing is asked for until a mark is really drawn, every start is guarded
+(`clip.play().catch`), a page that will not start sound before it has been touched is not argued with,
+and a missing `sounds/` folder costs a page nothing but the sound. The box turns it off and, when it
+is turned back on, plays one clip at once so the control says what it does.
+
+The files are MPEG-2 Layer III, 24 kHz, stereo, 160 kbps, and carry no header stating a length, so the
+length has to be counted in frames: 0.24–0.34 s that way. Chrome decodes each of them 0.046 s shorter,
+by the same amount every time. `tests/mp3-info.mjs` reads the files (frames, sample rate, duration,
+peak and level), and `qa/sound-check.mjs` drives a real page and asserts that the gap between the two
+readings is **constant** rather than claiming either one is the file's true length; it does not treat
+the audio device's sample rate as a property of the file either. One caveat that follows from a
+single-file page: paths resolve against the page, so the copy in `qa/` that the browser gates drive
+cannot find `sounds/` and says so in the console while still playing — which is why the sound gate and
+the remembered-settings gate run against `match5.html` itself.
+
 Legibility was measured from the pixels the game produced, not from the values in the stylesheet.
 `node qa/ui-check.mjs` histograms the canvas of each theme, takes the dominant colour as the
 surface everything has to be read against, and computes every mark against *that*:
@@ -169,8 +291,9 @@ and after the switch, and that the segment control moved to the other button.
 
 ## What the page remembers
 
-The board size, the difficulty and the board colour are written to `localStorage` under
-`match5.prefs.v1` as the player chooses them, and read back when the page is opened again.
+The board size, the difficulty, the board colour and whether the pencil sound is on are written to
+`localStorage` under `match5.prefs.v1` as the player chooses them, and read back when the page is
+opened again.
 
 - every remembered value is re-checked against the choices actually on offer before it is used. A
   size no longer offered, a level that no longer exists, a theme that was renamed: each falls back
@@ -181,27 +304,34 @@ The board size, the difficulty and the board colour are written to `localStorage
   not open dark and then change under the reader;
 - what the controls show is what gets stored: the write happens after the state and the controls
   have been reconciled, so in "1P vs CPU" the stored difficulty is the one the single control
-  displays, not a stale value left behind by an earlier two-engine game.
+  displays, not a stale value left behind by an earlier two-engine game;
+- the sound switch is stored as a boolean and read back as one: only a literal `true` or `false` is
+  accepted, and anything else leaves the shipped default in place, because a stored `"on"` is not the
+  same fact as a switch that is on.
 
 Not kept, deliberately: the game in progress (a resumed position would ask the player to remember
 where they were, and the log that explains that position is not kept either), the mode, and the
 advanced pins, which belong to an afternoon of tuning rather than to a preference.
 
-Measured rather than assumed: the pass sets 31×31, Expert and Paper through the real controls,
-prints what the entry says, leaves the page and comes back to the shipped file with no query
-string, and reports what a new session puts back — `size 31, level expert, theme paper`, the paper
-palette applied and the board already drawn in it, `movesAtStart 0` and an empty log. Then it puts
-`{not json` into the key and reloads: the page comes back at 25×25, Hard and Slate, rewrites the
-entry cleanly, and reports no errors.
+Measured rather than assumed: the pass sets 31×31, Expert and Paper through the real controls, and
+turns the pencil sound off through its box, prints what the entry says — including `sound false` —
+leaves the page and comes back to the shipped file with no query string, and reports what a new
+session puts back: `size 31, level expert, theme paper`, the paper palette applied and the board
+already drawn in it, the sound box still off, `movesAtStart 0` and an empty log. Then it puts
+`{not json` into the key and reloads: the page comes back at 25×25, Hard and Slate, with the sound
+on as it ships, rewrites the entry cleanly, and reports no errors. The sound round-trip is a gate: a
+checkbox that came back the other way is a setting that was not remembered.
 
 ## Tests
 
 All plain Node (no packages, no test runner; developed on Node v24):
 
 ```
-node tests/file-check.mjs        # static gate: engine block parses and stays DOM-free, every ui.* exists, every theme palette defines every colour the first one does, a remembered setting is checked against the choices on offer, and the decision log inserts at the top and trims from the bottom
+node tests/file-check.mjs        # static gate (90 checks): the engine block parses and stays DOM-free, every ui.* exists, every theme palette defines every colour the first one does, a remembered setting is checked against the choices on offer, the decision log inserts at the top and trims from the bottom, the marker for the last move keeps the rule that gives it the shape of the mark it marks, the sound files are present and readable, and qa/probe.html is the built copy it claims to be
 node tests/engine-test.mjs       # engine suite (~51,000 checks)
 node tests/icon-check.mjs        # the shipped icon: the container, every frame in it, the sizes a browser or shell asks for
+node tests/mp3-info.mjs          # what the five sound files are: codec, sample rate, duration counted in frames, peak and level
+node tests/first-move.mjs --games 100   # is the first move worth anything? same level both sides, N games each, with the interval
 ```
 
 The suite covers: incremental scoring vs a brute-force rescan of every 5-window;
@@ -217,7 +347,23 @@ checked for monotonicity (more clock at every step, never a lower ceiling, the
 same width throughout). The ladder runs the shipped clock *ratios* at a fraction
 of the shipped budgets — a third of them, which is about what the older fixed
 budgets cost — because at a sixth the gap between levels is noise rather than
-strength.
+strength. About 70 s per run on this machine.
+
+One claim in the suite used to be able to fail without anything being wrong, and it took twenty-five
+runs to hear it. The suite was run twenty-five times during a working session, twice with one failing
+check and never the same message twice in a row; when it finally named itself, on the tenth run of a
+deliberate batch, it was `hard only scored 1 of 2 against medium [pure search] - depth is not
+converting into results`. Two things about the *test* made that possible: that pairing ran on the
+clocks — a third of the shipped budgets, so Hard had 495 ms for a sixth-ply tree that takes longer
+than 495 ms when other work is on the machine — and it left the opening dice unpinned, so every run
+started from a different position. A two-game pairing cannot tell a weaker search from an unlucky
+line. It is now run each side to its own ply ceiling with a clock far too large to bind, the dice
+pinned per game like every other game in the section, which makes it a claim about depth that replays
+identically: two runs in a row produce the same win in 27 plies and the same draw after 60. The pass
+that is *meant* to feel the machine is `as shipped`, four games across both opening orders with an
+upset allowance, because a time-limited search is what it is testing; its bar is a floor rather than a
+target. The assertions that measure what a clock buys, in the section that reports depth and nodes per
+level, are sensitive to load by design and say so where they are made.
 
 ### Diagnostics (dev-only, nothing here ships)
 
@@ -278,15 +424,21 @@ start chrome --headless=new --remote-debugging-port=9333 `
   --user-data-dir=qa/cdp-profile --window-size=1440,1040
 ```
 
-Then build the probe page (it is `match5.html` plus `qa/probe.js` injected before
-`</body>`, so the real file is never modified) and run the pass:
+Then build the probe page and run the pass:
 
 ```powershell
-$out = (Get-Content match5.html -Raw -Encoding UTF8).Replace('</body>',
-  "<script>`r`n" + (Get-Content qa/probe.js -Raw -Encoding UTF8) + "`r`n</script></body>")
-[System.IO.File]::WriteAllText("$PWD/qa/probe.html", $out, [System.Text.UTF8Encoding]::new($false))
+node qa/make-probe.mjs      # qa/probe.html = match5.html + qa/probe.js, injected before </body>
 node qa/cdp-drive.mjs
 ```
+
+The copy is **built, not kept**. It used to be updated by hand, and it drifted: a whole round of
+changes to how marks are drawn went untested because the gate was measuring a page that still drew the
+marks that used to be. `tests/file-check.mjs` now fails if `qa/probe.html` is not exactly
+`match5.html` plus that script, and says to run `qa/make-probe.mjs` — so the copy cannot be behind the
+game it is a copy of. One consequence of a single-file page is worth knowing before reading a log: a
+path in the game resolves against the page that runs it, so the copy in `qa/` looks for `sounds/`
+inside `qa/` and reports those files missing. It still plays. Anything that reads files by path — the
+sound gate, the remembered-settings gate — runs against `match5.html` itself.
 
 `qa/probe.js` accepts hash cases in the URL (`#fast`, `#easy`, `#hard`, `#expert`,
 `#master`, `#pvp`, `#d0`, `#d12`) to pin mode, level and look-ahead. Its status
@@ -336,6 +488,40 @@ levels from the URL hash and would hide what the page restored by itself. For th
 `qa/log-look.png`, `qa/settings-open.png`, `qa/board-slate.png`, `qa/board-paper.png`,
 `qa/board-paper-winner.png` (a finished game, so the red five is in the frame) and
 `qa/board-remembered.png`.
+
+The marks are measured as pixels as well. `node qa/pen-ab.mjs` draws one position at several pen
+widths and reports what each produces: the line it draws in px at the cell size actually on screen, the
+mark's extent as a fraction of a cell, and how much of the square its colour covers — the numbers
+behind [How thick the pen is](#how-thick-the-pen-is). It stays a separate tool rather than a gate
+because it answers a question that has no pass/fail bar: what a given thickness would look like. It
+reads colour the same way the legibility pass does, as a projection between the surface and the mark,
+which is why a thin line still counts and a pale grid line does not.
+
+The marker for the last move is read out of the canvas by the same pass, at 13×13 where a cell is
+54–56 px and the drawing can be examined at that scale. The grid is measured off the lines the board
+drew, not assumed; a mark is placed with real mouse events, the pointer is then parked off the board so
+that the hover ghost cannot be mistaken for ink; the mark's centre is refined from its own deep ink
+(the cell arithmetic is good to about a pixel, and the clearances here are a few pixels); and the
+search is sixteen wedges 16° wide rather than a hair-thin ray — a 1.5 px line sampled along one ray at
+half-pixel steps can be missed entirely, which is what an earlier version of this check did, and it
+failed on the check rather than on the page. For a cross it wants ink at the four directions its arms
+point (measured: 0.64–0.67 of a cell out) and **none** of the other twelve; for the round mark it wants
+a whole circle (measured: 0.47–0.51 of a cell, in all sixteen). That is precisely the test a circle
+around a cross would fail, and the reason the cross is drawn with ends. For the eye it writes
+`qa/board-last-marker.png`, with a cross and then a circle placed last.
+
+The position bar is checked by playing a line whose lead changes hands and reading the laid-out boxes
+rather than the style text, as described in [The position bar](#the-position-bar). It writes
+`qa/board-eval-bar.png`, with the bar grown towards the side that is ahead. Three of the pass's
+findings carry an exit code — the shape of the marker, which way the bar grew, and whether the sound
+switch came back as it was left — because those are things that can simply be wrong; the rest of the
+pass reports what it measured and leaves the reading to whoever runs it.
+
+`node qa/sound-check.mjs` (18 checks) drives the shipped page in the browser: each of the five clips
+is asked for and starts, the length Chrome reports is compared with the length counted in frames and
+required to differ by the *same* offset for all five, a move plays exactly one clip, and nothing is
+logged to the console as an error. It needs the same Chrome as the other browser gates, and it runs
+against `match5.html` rather than the copy in `qa/` because the clips are found by path.
 
 ### What the pool was measured to do (the machine used for development: 16 logical cores)
 

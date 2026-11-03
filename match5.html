@@ -48,6 +48,15 @@
     --winpen: .62;
     --winink: .28;
     --winrange: .3;
+    /* How the marks themselves are drawn: the width of the pen that strokes an X or an O, as a
+       fraction of a cell. Only the weight of the line is a theme choice - how far a mark reaches
+       into its square is fixed in the drawing code, so a smaller number here is the same mark
+       drawn with a finer pen, never a smaller mark. A thick line reads as a felt-tip; the marks
+       are meant to look drawn by hand with a pen, which is what the paper theme is made of.
+       qa/pen-ab.mjs measures what these numbers produce on screen: at the default board a cell is
+       29 px, and .075 of it is the 2 px line in that run, about half the width the marks had
+       before, at an outside size that did not move. */
+    --stonpen: .075;
     --felt-a: #101822;
     --felt-b: #0c1219;
     --grid: #232f3d;
@@ -106,6 +115,16 @@
     --winpen: .16;
     --winink: .82;
     --winrange: .18;
+    /* In the picture the marks were made with a pen and the five that won was gone over again with
+       a thicker marker, so on this board the pen that draws a mark is the finer of the two: .075
+       against the .16 above. It is the same number the other board carries, and that is a result
+       rather than a decision to copy - at the default board's measured 29 px cell .075 asks for
+       2.2 px and the pixels come out 2 px wide, which is what a .07 was already producing, so this
+       sheet cannot show the difference between them. The value is still written here, because the
+       cell grows with the board and on a bigger one the number does say something: qa/pen-ab.mjs
+       measured a 13x13 board at 56 px a cell, where .075 is the 4 px line in its sheet - about
+       half the width the marks had before, at the same outside size. */
+    --stonpen: .075;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
@@ -177,6 +196,13 @@
   button.btn.primary { background: var(--accent); color: var(--on-ink); border-color: var(--accent); font-weight: 800; }
   button.btn:disabled { opacity: .42; cursor: not-allowed; }
 
+  /* A setting that is one bit - sound on or off - is one control, not a menu. The box takes the
+     page's accent colour so it belongs to whichever theme is on. */
+  label.chk { display: flex; gap: 9px; align-items: center; font-size: 12.5px; color: var(--dim);
+    cursor: pointer; user-select: none; }
+  label.chk input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  label.chk:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
   /* ---------- score ---------- */
   .score { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
   .score div { background: var(--panel2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 4px; }
@@ -189,7 +215,13 @@
   /* ---------- eval bar ---------- */
   .evalwrap { display: flex; align-items: center; gap: 9px; margin-top: 12px; }
   .evalbar { position: relative; flex: 1; height: 10px; border-radius: 999px; background: var(--track); border: 1px solid var(--line2); overflow: hidden; }
-  .evalbar i { position: absolute; inset: 0 auto 0 0; width: 50%; background: linear-gradient(90deg, var(--p1), var(--p1soft)); transition: width .25s ease; }
+  .evalbar i { position: absolute; top: 0; bottom: 0; width: 0; transition: width .25s ease; }
+/* The scale runs from -90M to +90M with its zero in the middle, so the fill starts at that middle
+   and grows towards whichever side is ahead - right and amber for X, left and teal for O. An empty
+   bar is a level position; a full half is a decided game. Both halves are anchored at the centre, so
+   the bar only ever grows outward and never slides. */
+.evalbar i.tox { left: 50%; background: linear-gradient(90deg, var(--p1), var(--p1soft)); }
+.evalbar i.too { right: 50%; background: linear-gradient(270deg, var(--p2), rgba(var(--p2rgb), .45)); }
   .evalbar u { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--dim2); left: 50%; }
   .evalnum { font: 700 11px/1 var(--mono); color: var(--dim); min-width: 62px; text-align: right; }
 
@@ -351,6 +383,10 @@
               <input type="range" id="speedSel" min="0" max="900" step="20" value="220">
             </label>
           </div>
+          <div class="row" id="soundWrap">
+            <label class="chk"><input type="checkbox" id="soundChk" checked>
+              Pencil sound when a mark is drawn</label>
+          </div>
           <div class="row">
             <div class="btns">
               <button class="btn primary" id="newBtn">New game</button>
@@ -358,8 +394,9 @@
               <button class="btn" id="hintBtn">Hint</button>
             </div>
           </div>
-          <p class="cap">The board size, the difficulty and the board colour are kept on this
-            computer and put back when the page is opened again. A game in progress is not kept.</p>
+          <p class="cap">The board size, the difficulty, the board colour and whether marks make a
+            sound are kept on this computer and put back when the page is opened again. A game in
+            progress is not kept.</p>
           <div class="score" style="margin-top:12px">
             <div><b id="sc1">0</b><span>X</span></div>
             <div><b id="scD">0</b><span>Draw</span></div>
@@ -367,7 +404,7 @@
           </div>
           <div class="turnline"><span class="pip p1" id="turnPip"></span><span id="turnTxt">X to move</span></div>
           <div class="evalwrap">
-            <div class="evalbar"><i id="evalFill"></i><u></u></div>
+            <div class="evalbar"><i id="evalX" class="tox"></i><i id="evalO" class="too"></i><u></u></div>
             <span class="evalnum" id="evalNum">0.0</span>
           </div>
           <div id="banner">
@@ -1384,10 +1421,12 @@ function Match5Engine() {
     depthSel: $('depthSel'), widthSel: $('widthSel'), timeSel: $('timeSel'), timeVal: $('timeVal'),
     speedSel: $('speedSel'), speedVal: $('speedVal'), modeSeg: $('modeSeg'), themeSeg: $('themeSeg'),
     sideWrap: $('sideWrap'), lvl1Wrap: $('lvl1Wrap'), lvl2Wrap: $('lvl2Wrap'), speedWrap: $('speedWrap'),
+    soundWrap: $('soundWrap'), soundChk: $('soundChk'),
+    soundChk: $('soundChk'), soundWrap: $('soundWrap'),
     newBtn: $('newBtn'), undoBtn: $('undoBtn'), hintBtn: $('hintBtn'), againBtn: $('againBtn'),
     turnTxt: $('turnTxt'), turnPip: $('turnPip'),
     sc1: $('sc1'), sc2: $('sc2'), scD: $('scD'),
-    evalFill: $('evalFill'), evalNum: $('evalNum'),
+    evalX: $('evalX'), evalO: $('evalO'), evalNum: $('evalNum'),
     stDepth: $('stDepth'), stNodes: $('stNodes'), stTime: $('stTime'), stThreads: $('stThreads'), stScore: $('stScore'),
     stFours: $('stFours'), stMoves: $('stMoves'), stWhy: $('stWhy'), candBody: $('candBody'),
     banner: $('banner'), bannerRes: $('bannerRes'), bannerSub: $('bannerSub'),
@@ -1408,6 +1447,7 @@ function Match5Engine() {
     delay: 220,
     size: 25,
     theme: 'slate',
+    sound: true,            // the pencil sound that goes with drawing a mark
     g: null,
     moves: [],
     over: false,
@@ -1784,7 +1824,37 @@ function Match5Engine() {
     afterMove();
   }
 
+  /* The sound a mark makes. Five short pencil scratches sit beside the page in sounds/ - three for
+     X, two for O - and one of its side's clips is picked at random every time a mark is drawn,
+     because the same recording on every move is what makes a page like this sound synthetic: on
+     paper no two strokes sound identical. The clips run 0.24-0.34 s (tests/mp3-info.mjs reads the
+     frame headers and says so), so at the fastest demo pace two can overlap, which is what a hand
+     drawing quickly sounds like. Nothing is asked for until a mark is really drawn, and every play
+     is guarded: a browser that will not start sound before the page has been touched, or a sounds/
+     folder that did not come with the html, costs silence - not an error and not a broken page.
+     The pick uses Math.random rather than the engine's dice on purpose: which scratch is heard is
+     not part of the game, and a game replayed must replay the same with any sound. */
+  const SCRATCH = {
+    x: ['sounds/marker-x1.mp3', 'sounds/marker-x2.mp3', 'sounds/marker-x3.mp3'],
+    o: ['sounds/marker-o1.mp3', 'sounds/marker-o2.mp3'],
+  };
+
+  function scratch(player) {
+    if (!S.sound) return;
+    const family = SCRATCH[player === A ? 'x' : 'o'];
+    if (!family || !family.length) return;
+    try {
+      const clip = new Audio(family[(Math.random() * family.length) | 0]);
+      clip.play().catch(() => { });   // refused before the first touch, or the file is not there
+    } catch (e) { /* no audio in this browser: the game plays, it is only silent */ }
+  }
+
   function afterMove() {
+    /* the mark has just been drawn, so the pencil goes with it. The side is read back off the
+       board instead of being passed in: the last move is the move that was just made, on every
+       path that makes one, and Undo - which draws no mark - never comes through here. */
+    const made = S.moves[S.moves.length - 1];
+    if (made !== undefined) scratch(S.g.board[made]);
     const w = S.g.winner();
     if (w) {
       S.over = true; S.winner = w;
@@ -1902,8 +1972,12 @@ function Match5Engine() {
     ui.stScore.textContent = fmtScore(st.scoreA - st.scoreB);
     ui.stFours.textContent = st.fourA + ' / ' + st.fourB;
     const diff = st.scoreA - st.scoreB;
-    const t = 0.5 + 0.5 * Math.tanh(diff / 12000);
-    ui.evalFill.style.width = (100 * t).toFixed(1) + '%';
+    /* One reading, two forms: the number says how far one side is ahead, the bar says the same thing
+       as a length growing out of the middle towards that side. The saturation is unchanged - a bar
+       that reaches the edge of its half is a position already decided, not merely a comfortable one. */
+    const adv = Math.tanh(diff / 12000);            // -1..1, positive while X is ahead
+    ui.evalX.style.width = (Math.max(0, adv) * 50).toFixed(1) + '%';
+    ui.evalO.style.width = (Math.max(0, -adv) * 50).toFixed(1) + '%';
     ui.evalNum.textContent = fmtScore(diff);
     refreshTurn();
     timeLabel();          // the clock shown here must be the clock the CPU will actually get
@@ -2139,6 +2213,10 @@ function Match5Engine() {
          a wide translucent band, a paper one needs a thin solid pen. Numbers, so parsed. */
       winpen: parseFloat(v('--winpen', '.62')), winink: parseFloat(v('--winink', '.28')),
       winrange: parseFloat(v('--winrange', '.3')),
+      /* the pen the marks are drawn with, for the same reason the winning line's is here: it is a
+         number in the palette, so a theme that wanted a finer or a heavier line could ask for one,
+         and the drawing code carries no thickness of its own */
+      stonpen: parseFloat(v('--stonpen', '.075')),
       feltA: v('--felt-a', '#101822'), feltB: v('--felt-b', '#0c1219'),
       grid: v('--grid', '#232f3d'), star: v('--star', '#31414f'), coord: v('--coord', '#4d5c6d'),
       mono: (getComputedStyle(document.body).getPropertyValue('--mono') || 'monospace').trim()
@@ -2151,25 +2229,89 @@ function Match5Engine() {
     dirty = true;
   }
 
+  /* Where a mark's outside edge lies, measured along a grid axis, as a fraction of a cell. Both
+     marks take the same one - the circle by its own radius, the cross by reaching that far along
+     each axis - and this is the size they already had: the old path ran 0.36 of a cell out under a
+     pen 0.14 wide, and a round cap reaches half the pen past the end of a line, so the edge sat at
+     0.36 + 0.07 = 0.43. It is written down once and it is not a theme number, so that asking for a
+     thinner line cannot quietly make a mark smaller. */
+  const MARK_EXTENT = 0.43;
+
   function drawStone(px, py, player, alpha, scale) {
-    const r = cell * 0.36 * (scale || 1);
+    const pen = Math.max(1, cell * PAL.stonpen);             // how heavy the pen is
+    const out = cell * MARK_EXTENT * (scale || 1);           // where the mark's edge belongs
+    const path = Math.max(1, out - pen / 2);                 // a line stops half a pen short of it
     ctx.globalAlpha = alpha;
+    ctx.strokeStyle = player === A ? PAL.p1 : PAL.p2;
+    ctx.lineWidth = pen;
+    ctx.lineCap = 'round';
     if (player === A) {
-      ctx.strokeStyle = PAL.p1;
-      ctx.lineWidth = Math.max(2, cell * 0.14);
-      ctx.lineCap = 'round';
+      /* Two lines corner to corner, both ending as far from the centre as the circle's radius. The
+         cap is a half-disc of the pen, which reaches half a pen along every axis - not only along
+         the line - so the thinner the pen, the less of the mark its own ends make and the longer
+         the line has to be. That is how the mark keeps the size it has while the line stops being
+         a felt-tip. */
       ctx.beginPath();
-      ctx.moveTo(px - r, py - r); ctx.lineTo(px + r, py + r);
-      ctx.moveTo(px + r, py - r); ctx.lineTo(px - r, py + r);
+      ctx.moveTo(px - path, py - path); ctx.lineTo(px + path, py + path);
+      ctx.moveTo(px + path, py - path); ctx.lineTo(px - path, py + path);
       ctx.stroke();
     } else {
-      ctx.strokeStyle = PAL.p2;
-      ctx.lineWidth = Math.max(2, cell * 0.14);
       ctx.beginPath();
-      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.arc(px, py, path, 0, Math.PI * 2);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+  }
+
+  /* The marker that says "this was the last one placed" is the outline of that mark. Around the round
+     mark that outline is a circle, which is what this has always drawn and what it still draws. Around
+     a cross it cannot be the whole outline: two of its sides run along each arm, and a second line
+     that close to the first does not read as a marker, it reads as a thicker mark - measured at the
+     default board, the clear space between such a pair is 0 to 1.5 px when a cell is 28 px, which is
+     less than the ink of either line. What a cross has that a round mark does not is four ends, and
+     the ends of its outline do read: short strokes across each arm, just clear of its tip, facing the
+     corners of the square. Same rule, same one number, and the shape of the mark is what the reader
+     sees.
+
+     That number is a compromise between two measurements, and it is not a margin that is genuinely
+     free at every size. Brought in to 0.03 of a cell, a cross's caps merge into its tips: 0 px of
+     clear space at a 28 px cell, and they read as a heavier mark. Out at 0.07 the caps reach 2.7 px
+     past the square's edge at that cell (5.4 px at a 79 px one) and the pair stops looking like one
+     mark. At 0.05 the outermost ink of either marker gets 1.6 px past the grid line at a 28 px cell,
+     0.3 px at a 56 px one - 0.005 of a cell into the neighbouring square, where a mark's own ink
+     begins 0.070 in. What separates the marker from the mark at a small cell is the tone, not a gap:
+     a pen half a pixel wide already reaches that far, so the circle lands on the round mark's own ink
+     and the caps touch the cross's tips. At a 56 px cell there are 2 px of real space as well. The
+     browser gate reads the drawing as it is: a whole circle for the round mark, at 0.47 to 0.51 of a
+     cell in all sixteen directions; for the cross, ink at its four arm ends at 0.64 to 0.67 and
+     nothing at all in the twelve directions between them - which is the test that a circle round a
+     cross would fail, and the reason this is not one. */
+  const LAST_GAP = 0.05;
+
+  function drawLastMark(x, y, player) {
+    const pen = Math.max(1, cell * PAL.stonpen);                 // the pen the mark was drawn with
+    const gap = Math.max(1, cell * LAST_GAP);                    // how far off it the marker stands
+    const out = cell * MARK_EXTENT;                              // the mark's own outside edge
+    ctx.strokeStyle = rgbaOf(player === A ? PAL.p1rgb : PAL.p2rgb, .55);
+    ctx.lineWidth = 1.5;
+    if (player === B) {
+      ctx.beginPath();
+      ctx.arc(x, y, out + gap, 0, Math.PI * 2);
+      ctx.stroke();
+      return;
+    }
+    /* A line ends half a pen short of the mark's edge and its round cap adds that half back along
+       the arm, so the tip is the axis extent taken along the diagonal with nothing doubled. */
+    const reach = (out - pen / 2) * Math.SQRT2 + pen / 2 + gap;   // along an arm, past its tip
+    const half = pen / 2 + gap;                                   // and as far to either side of it
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) {
+      const ux = dx / Math.SQRT2, uy = dy / Math.SQRT2;           // along the arm
+      const nx = -uy, ny = ux;                                    // across it
+      ctx.moveTo(x + reach * ux - half * nx, y + reach * uy - half * ny);
+      ctx.lineTo(x + reach * ux + half * nx, y + reach * uy + half * ny);
+    }
+    ctx.stroke();
   }
 
   function draw() {
@@ -2236,11 +2378,7 @@ function Match5Engine() {
       if (!p) continue;
       const [x, y] = cellXY(c);
       drawStone(x, y, p, 1, 1);
-      if (c === last) {          // keep marking the deciding move after the game ends
-        ctx.strokeStyle = rgbaOf(p === A ? PAL.p1rgb : PAL.p2rgb, .55);
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(x, y, cell * 0.46, 0, Math.PI * 2); ctx.stroke();
-      }
+      if (c === last) drawLastMark(x, y, p);   // keep marking the deciding move after the game ends
     }
 
     // hint marker
@@ -2316,7 +2454,7 @@ function Match5Engine() {
   function prefsWrite() {
     try {
       localStorage.setItem(PREF_KEY, JSON.stringify({
-        v: 1, size: S.size, level1: S.level1, level2: S.level2, theme: S.theme
+        v: 1, size: S.size, level1: S.level1, level2: S.level2, theme: S.theme, sound: S.sound
       }));
     } catch (e) { /* refused: the game plays, it just does not remember this change */ }
   }
@@ -2326,10 +2464,15 @@ function Match5Engine() {
   const rTheme = remember(saved.theme, THEMES);
   const rLevel1 = remember(saved.level1, ENG.LEVEL_ORDER);
   const rLevel2 = remember(saved.level2, ENG.LEVEL_ORDER);
+  /* A switch has no list of choices to check against, so the check is on its type: only a real
+     true or false counts, and anything else - a string, a number, a field an older entry never
+     wrote - leaves the page's own default where it is. */
+  const rSound = (saved.sound === true || saved.sound === false) ? saved.sound : null;
   if (rSize !== null) S.size = rSize;
   if (rTheme !== null) S.theme = rTheme;
   if (rLevel1 !== null) S.level1 = rLevel1;
   if (rLevel2 !== null) S.level2 = rLevel2;
+  if (rSound !== null) S.sound = rSound;
   /* end of remembered settings */
 
   /* ---------------- control wiring ---------------- */
@@ -2430,6 +2573,17 @@ function Match5Engine() {
   }
   ui.timeSel.addEventListener('input', () => { S.timeMs = +ui.timeSel.value; timeLabel(); });
   ui.speedSel.addEventListener('input', () => { S.delay = +ui.speedSel.value; ui.speedVal.textContent = S.delay + ' ms'; });
+
+  /* A switch with two states is one box, not a menu. Turning the sound back on plays a scratch
+     straight away, because whoever changed it should hear what they changed it to - and the click
+     that changed it is a gesture the browser will let sound follow. It plays for the side that
+     moved last, so the sound that arrives belongs to the board that is on the screen. */
+  ui.soundChk.checked = S.sound;
+  ui.soundChk.addEventListener('change', () => {
+    S.sound = ui.soundChk.checked;
+    prefsWrite();
+    if (S.sound) scratch(S.moves.length ? S.g.board[S.moves[S.moves.length - 1]] : A);
+  });
   ui.newBtn.addEventListener('click', newGame);
   ui.againBtn.addEventListener('click', newGame);
   ui.undoBtn.addEventListener('click', undo);

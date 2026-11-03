@@ -369,7 +369,19 @@ console.log('[7] strength ladder (13x13, colours swapped per pairing)');
 {
   const S = 13;
   const pairings = [
-    /* Measured at the clocks below (the shipped clock ratios, at a third of the shipped budgets):
+    /* Two claims, run differently on purpose. "pure search" is about depth: each side is pinned to its
+       own level's ply ceiling and the clock is set well above what that ceiling costs on this machine,
+       so it cannot bind - the result is then a property of the code, not of what else is running. It
+       used to run on the clock ratios below; at 495 ms Hard's sixth-ply tree did not always finish,
+       which showed up as one failing check in about twenty runs of this suite, always this one and
+       always while other work was on the machine. Two games cannot carry a coin toss.
+       "as shipped" is the real thing: shipped clock ratios at a third of the shipped budgets, four
+       games across both opening orders, an upset allowance. Those games do depend on the machine,
+       because that is what the claim is about, which is why the bar there is a floor not a target.
+       Both passes pin the variety dice (cfg.entropy) per game, so a game here replays identically;
+       what still varies between runs of the shipped pass is the clock, and that is the thing under
+       test - which is why its four games carry an upset allowance and its bar is a floor.
+       Measured at the clocks below (the shipped clock ratios, at a third of the shipped budgets):
          hard vs medium    2/2 pure, 2/4 shipped  - the same 2/4 at two different clock scales
          medium vs easy    3.5/4 shipped
          hard vs easy      4/4 shipped
@@ -393,7 +405,12 @@ console.log('[7] strength ladder (13x13, colours swapped per pairing)');
     const CLOCK = (lv) => Math.max(120, Math.round(ENG.LEVELS[lv].timeMs * 0.33));
     const passes = [];
     if (pureNeed > 0) {
-      passes.push({ name: 'pure search', ov: { tieChance: 0 }, need: pureNeed,
+      /* byDepth: the clock cannot bind, so the ply ceiling decides - see the note on the pairings.
+         The variety dice are pinned per game here too, as in the shipped pass: an unpinned dice makes
+         the opening different every run, and a two-game pairing cannot tell a weaker search from an
+         unlucky line. */
+      passes.push({ name: 'pure search', byDepth: true, ov: { tieChance: 0, entropy: 0xA5A5A5A5 },
+        pinStep: 7919, need: pureNeed,
         openers: [[strongLevel, weakLevel], [weakLevel, strongLevel]] });
     }
     passes.push({ name: 'as shipped', ov: { entropy: 0x5EED }, need: shippedNeed, pinStep: 7919,
@@ -401,16 +418,23 @@ console.log('[7] strength ladder (13x13, colours swapped per pairing)');
     for (const pass of passes) {
       let strongScore = 0, upsets = 0;
       const allowUpsets = Math.floor(pass.openers.length - pass.need);
+      console.log('  ' + strongLevel + ' vs ' + weakLevel + ' [' + pass.name + '] ' + (pass.byDepth
+        ? 'each side to its own ceiling (' + ENG.LEVELS[strongLevel].maxDepth + ' vs ' +
+          ENG.LEVELS[weakLevel].maxDepth + ' plies), a clock too large to bind'
+        : 'clocks ' + CLOCK(strongLevel) + '/' + CLOCK(weakLevel) + ' ms'));
       for (let i = 0; i < pass.openers.length; i++) {
         const g = ENG.createGame({ size: S, win: 5 });
         const lvOf = (player) => player === A ? pass.openers[i][0] : pass.openers[i][1];
         const strongSide = pass.openers[i].indexOf(strongLevel) === 0 ? A : B;
         // a different fixed dice per game: reproducible, but not the same game four times over
         const ov = pass.pinStep ? Object.assign({}, pass.ov, { entropy: (pass.ov.entropy + i * pass.pinStep) >>> 0 }) : pass.ov;
+        const searchOf = (lv) => pass.byDepth
+          ? Object.assign({}, ov, { maxDepth: ENG.LEVELS[lv].maxDepth, timeMs: 30000, timeMsSet: true })
+          : Object.assign({}, ov, { timeMs: CLOCK(lv), timeMsSet: true });
         let plies = 0;
         while (!g.winner() && !g.isFull() && plies < 60) {
           const p = g.turn();
-          const r = g.search(p, lvOf(p), Object.assign({}, ov, { timeMs: CLOCK(lvOf(p)), timeMsSet: true }));
+          const r = g.search(p, lvOf(p), searchOf(lvOf(p)));
           if (r.cell < 0) break;
           g.play(r.cell);
           plies++;

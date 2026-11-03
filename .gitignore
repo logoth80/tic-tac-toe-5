@@ -1,9 +1,12 @@
 # Chrome user-data-dir created by qa/cdp-drive.mjs (hundreds of MB, disposable)
 qa/cdp-profile/
 
-# QA output: screenshots and the Chrome stderr log
+# QA output: screenshots, the Chrome stderr log, and the transcripts the passes print. A file here
+# that is meant to be kept as a record - qa/icon-audit.txt is one - is tracked already, and an
+# ignored pattern does not untrack a tracked file; any other such file needs `git add -f`.
 qa/*.png
 qa/chrome-err.txt
+qa/*.txt
 
 # Generated: match5.html with qa/probe.js injected before </body> (see README)
 qa/probe.html
