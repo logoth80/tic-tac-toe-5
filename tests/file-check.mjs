@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { readMp3 } from './mp3-info.mjs';
+import { faviconBytes, faviconBlock } from './ico-png.mjs';
 
 const html = fs.readFileSync(new URL('../match5.html', import.meta.url), 'utf8');
 let fails = 0, checks = 0;
@@ -36,7 +37,15 @@ ok(/postMessage/.test(html) && /onmessage/.test(html), 'worker message plumbing 
 const sizes = (html.match(/const SIZES\s*=\s*\[([^\]]*)\]/) || [])[1] || '';
 ok(/(^|[,\s])25([,\s\]]|$)/.test(sizes), '25 must be an offered board size, SIZES = [' + sizes.trim() + ']');
 ok(/size:\s*25/.test(html), 'default board size must be 25');
-ok(!/<link\b|<script[^>]+\bsrc=/i.test(html), 'file must not depend on external resources');
+/* One file means the page reaches outside itself for nothing it *is*: no stylesheet, no script, no
+   image, no icon by path. The mark sounds are the one exception the page already makes - five files
+   beside it, guarded so a missing folder costs silence - and the tab icon is deliberately not one: it
+   carries its own bytes as data, because a page whose mark disappears from the tab when the file is
+   mailed alone is a page that lost part of its identity on the way. So the rule is about hrefs, not
+   tags: every src or href in the markup has to be a data: URI. */
+const external = [...html.matchAll(/<(?:link|script|img)\b[^>]*?\b(?:href|src)\s*=\s*"([^"]*)"/gi)]
+  .map((m) => m[1]).filter((u) => !/^data:/.test(u));
+ok(external.length === 0, 'the markup reaches outside the file for: ' + external.join(', '));
 
 /* ---- DOM contract: every $(id) lookup must exist in the markup, and every
         ui.<key> reference must be a key of the ui map (catches init crashes) ---- */
@@ -223,6 +232,43 @@ ok(!/<link\b|<script[^>]+\bsrc=/i.test(html), 'file must not depend on external 
   ok(!/<audio\b|\.load\(\)/.test(html), 'nothing may be asked for before a mark is drawn');
   ok(/if \(!S\.sound\) return/.test(html) && /clip\.play\(\)\.catch/.test(html),
     'a switch that is off, a browser that refuses sound before the first touch, or a missing folder costs silence');
+}
+
+/* ---- the tab icon is the project's mark. A page opened on its own has nothing beside it to link, so
+   the 16 and 32 px frames of match5.ico are carried inside the file. They are not typed out and not
+   re-drawn: tests/ico-png.mjs reads the frames from the .ico (32-bit bitmaps whose alpha channel holds
+   the real transparency and whose AND masks are all zero, measured) and re-contains the same pixels as
+   PNG, so the tab and the shell cannot become two drawings of one idea. Measured: 864 and 1958 bytes of
+   PNG, 3764 of base64, 4417 added to a 128906-byte page. All nine frames would be 76787 bytes, which
+   is why only the sizes a tab asks for are carried - and why a byte budget belongs in this gate: nine
+   frames for an icon the size of a fingernail would be a quarter of the page, quietly. */
+{
+  const icoUrl = new URL('../match5.ico', import.meta.url);
+  ok(fs.existsSync(icoUrl), 'match5.ico is missing - the tab icon is derived from it, not written out by hand');
+  const END_MARK = '<!--__FAVICON_END__-->';
+  const s = html.indexOf('<!--__FAVICON_START__-->'), e = html.indexOf(END_MARK);
+  ok((html.match(/__FAVICON_START__/g) || []).length === 1, 'exactly one icon block, between the FAVICON markers');
+  ok(s >= 0 && e > s, 'the page holds no icon block - run: node qa/make-favicon.mjs --write');
+  if (s >= 0 && e > s) {
+    ok(s < html.indexOf('</head>'), 'the icon belongs in the head, before </head>');
+    const declared = [...html.matchAll(/<link rel="icon"[^>]*sizes="(\d+)x\1"/g)].map((m) => +m[1]);
+    ok(declared.length >= 1, 'every icon link must name the size it carries');
+    for (const link of html.matchAll(/<link rel="icon"[^>]*>/g)) {
+      ok(/href="data:image\/png;base64,[A-Za-z0-9+/]+={0,2}"/.test(link[0]),
+        'an icon link is not carrying its own bytes - a page opened on its own would go looking for a file');
+    }
+    try {
+      const want = faviconBlock(icoUrl, declared, '\n');
+      const got = html.slice(s, e + END_MARK.length).replace(/\r\n/g, '\n');
+      ok(got === want, 'the page carries an icon block that is not what match5.ico produces (' +
+        got.length + ' bytes against ' + want.length + ' derived) - run: node qa/make-favicon.mjs --write');
+      const bytes = faviconBytes(icoUrl, declared).items.reduce((t, it) => t + it.base64.length, 0);
+      ok(bytes < 8192, 'the page carries ' + bytes + ' bytes of icon for ' + declared.join('/') +
+        'px - past 8192 something no tab asks for is being carried (the whole .ico as data is 76787)');
+    } catch (err) {
+      ok(false, 'the icon block cannot be re-derived from match5.ico: ' + err.message);
+    }
+  }
 }
 
 console.log(fails ? '\nFAILED ' + fails + ' of ' + checks : '\nPARSE/STRUCTURE OK — ' + checks + ' checks');

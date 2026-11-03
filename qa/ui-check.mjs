@@ -5,7 +5,9 @@
 // line still states what is pinned. It also measures the log's place in the page rather than
 // trusting the markup - that it starts immediately under the board, in that column's width,
 // laid out as one row per decision with no text spilling out of the card. It photographs the
-// log and the opened panel.
+// log and the opened panel. It also asks a browser to decode the icons the page carries and counts
+// their colours against the palette the stones use: a tab icon that only exists in the markup, or that
+// decodes into a picture of something else, is not a tab icon.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -34,8 +36,7 @@ ws.onmessage = (ev) => {
   }
 };
 const send = (method, params = {}) => new Promise((res) => { const id = ++idc; pending.set(id, res); ws.send(JSON.stringify({ id, method, params })); });
-const evaluate = async (expression) => {
-  const r = await send('Runtime.evaluate', { expression, returnByValue: true });
+const unwrap = (r) => {
   /* A probe that throws must not arrive as undefined a few lines later, where it reads as a bad
      value from the page rather than a broken instrument. */
   const bad = r.result?.exceptionDetails;
@@ -46,8 +47,16 @@ const evaluate = async (expression) => {
   }
   return r.result?.result?.value;
 };
-const shot = async (name) => {
-  const r = await send('Page.captureScreenshot', { format: 'png' });
+const evaluate = async (expression) =>
+  unwrap(await send('Runtime.evaluate', { expression, returnByValue: true }));
+/* for anything that resolves on the page's own clock - an image decoding, a sound starting. Reading
+   the value before it resolves would measure the instrument, not the page. */
+const evaluateSettled = async (expression) =>
+  unwrap(await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }));
+const shot = async (name, clip) => {
+  const params = { format: 'png' };
+  if (clip) Object.assign(params, { clip: Object.assign({ scale: 1 }, clip), captureBeyondViewport: true });
+  const r = await send('Page.captureScreenshot', params);
   if (!r.result?.data) { console.log('no screenshot data'); return; }
   const p = path.join(QA, name);
   fs.writeFileSync(p, Buffer.from(r.result.data, 'base64'));
@@ -514,6 +523,178 @@ await shot('board-eval-bar.png');
 console.log('  ' + (barFails.length ? 'FAILED: ' + barFails.join('; ') :
   'the bar grows out of the middle towards whichever side is ahead, in that side\'s colour'));
 
+/* ---------- the tab icon, asked of the browser rather than read off the markup ----------
+   The static gate proves the page carries the bytes match5.ico holds. It cannot prove a browser can
+   decode them, nor that the decoded picture is this project's mark rather than any other picture of
+   the right size. So the declared icons are loaded as images, drawn back at their own size, their
+   pixels counted, and their colours compared with the ones this page uses for its own stones. Then
+   the same images are enlarged 8x on the page and photographed, so the mark can be looked at.
+   What this cannot show is a tab: the QA browser is headless and has no tab strip. */
+const iconFails = [];
+const ico = JSON.parse(await evaluateSettled(`new Promise(function (done) {
+  var links = [].slice.call(document.querySelectorAll('link[rel="icon"]'));
+  var out = { declared: [], images: [], palette: {} };
+  links.forEach(function (l) {
+    var href = l.getAttribute('href') || '';
+    out.declared.push({ sizes: l.getAttribute('sizes') || '', head: href.slice(0, 22),
+      chars: href.length, isData: /^data:/.test(href) });
+  });
+  var cs = getComputedStyle(document.documentElement);
+  /* The icon carries the colours of the palette it was drawn against - the dark board with the orange
+     and cyan marks - so the comparison has to be made with that palette in place. The sections above
+     may have left the page in the other one, and reading colours from whatever theme happens to be on
+     would compare the icon against inks it was never built from (measured: in the paper palette the
+     icon's dark tile sits 1 channel away from that theme's O ink, which is a coincidence about black,
+     not a statement about the icon). Removing the attribute is what the shipped page does by default. */
+  var prevTheme = document.documentElement.getAttribute('data-theme');
+  document.documentElement.removeAttribute('data-theme');
+  cs = getComputedStyle(document.documentElement);
+  function rgbOf(text) {
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;left:-9999px;top:0;color:' + text;
+    document.body.appendChild(probe);
+    var read = getComputedStyle(probe).color;
+    document.body.removeChild(probe);
+    var m = read.match(/(\\d+)\\D+(\\d+)\\D+(\\d+)/);
+    return m ? [ +m[1], +m[2], +m[3] ] : null;
+  }
+  function triple(name) {
+    var v = (cs.getPropertyValue(name) || '').split(',');
+    return v.length === 3 && v.every(function (n) { return /^\\s*\\d+\\s*$/.test(n); })
+      ? v.map(function (n) { return +n; }) : null;
+  }
+  var want = { p1: rgbOf(cs.getPropertyValue('--p1')), p2: rgbOf(cs.getPropertyValue('--p2')),
+    p1rgb: triple('--p1rgb'), p2rgb: triple('--p2rgb') };
+  if (prevTheme !== null) document.documentElement.setAttribute('data-theme', prevTheme);
+  out.palette = want; out.themeDuringRead = prevTheme === null ? 'shipped default' : prevTheme;
+  if (!links.length) { done(JSON.stringify(out)); return; }
+  var left = links.length;
+  links.forEach(function (l) {
+    var img = new Image();
+    img.onload = function () {
+      var c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      var g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(img, 0, 0);
+      var px = g.getImageData(0, 0, c.width, c.height).data;
+      var stat = { total: px.length / 4, clear: 0, solid: 0, soft: 0 }, buckets = {}, top = [];
+      for (var i = 3; i < px.length; i += 4) {
+        if (px[i] === 0) stat.clear++; else if (px[i] === 255) stat.solid++; else stat.soft++;
+        if (px[i] > 200) {
+          /* quantised by 16: an icon this small has no exact flat colours - its edges are blended, and
+             asking for an exact RGB match would report the artwork as a scatter of one-off pixels */
+          var key = (px[i - 3] >> 4) + ',' + (px[i - 2] >> 4) + ',' + (px[i - 1] >> 4);
+          buckets[key] = (buckets[key] || 0) + 1;
+        }
+      }
+      Object.keys(buckets).forEach(function (k) { top.push([k, buckets[k]]); });
+      top.sort(function (a, b) { return b[1] - a[1]; });
+      function near(t) {
+        if (!t) return null;
+        var n = 0, best = 1e9;
+        for (var j = 0; j < px.length; j += 4) {
+          if (px[j + 3] < 40) continue;
+          var d = Math.max(Math.abs(px[j] - t[0]), Math.abs(px[j + 1] - t[1]), Math.abs(px[j + 2] - t[2]));
+          if (d < 40) n++;
+          if (d < best) best = d;
+        }
+        return { want: t.join(','), within40: n, closestChannelDelta: best };
+      }
+      out.images.push({ sizes: l.getAttribute('sizes') || '', chars: (l.getAttribute('href') || '').length,
+        natural: img.naturalWidth + 'x' + img.naturalHeight, pixels: stat,
+        colours: top.slice(0, 4).map(function (b) {
+          return (b[0].split(',').map(function (n) { return n * 16; }).join(',')) + ' x' + b[1]; }),
+        p1: near(want.p1), p2: near(want.p2) });
+      if (!--left) done(JSON.stringify(out));
+    };
+    img.onerror = function () {
+      out.images.push({ sizes: l.getAttribute('sizes') || '', natural: 'the browser could not decode it' });
+      if (!--left) done(JSON.stringify(out));
+    };
+    img.src = l.href;
+  });
+})`));
+const seen = (n) => n ? n.within40 + ' px of ' + n.want + ' (closest delta ' + n.closestChannelDelta + ')' : 'n/a';
+for (const d of ico.declared) {
+  console.log('  declared: ' + (d.sizes || 'no sizes attribute') + '  ' + d.head + '...  ' + d.chars +
+    ' chars' + (d.isData ? '' : '  *** NOT SELF-CONTAINED'));
+  if (!d.isData) iconFails.push('an icon link points outside the file (' + d.head + ')');
+  if (!/^\d+x\d+$/.test(d.sizes)) iconFails.push('an icon link does not name its size');
+}
+if (ico.declared.length !== 2) iconFails.push(ico.declared.length + ' icon links in the page; the tab needs a 16 and a 32');
+for (const im of ico.images) {
+  console.log('  ' + im.sizes + ' -> decoded ' + im.natural + '  pixels ' + JSON.stringify(im.pixels));
+  console.log('     colour bands held: ' + (im.colours || []).join(' | '));
+  console.log('     ' + seen(im.p1) + '   |   ' + seen(im.p2));
+  const want = (im.sizes.match(/\d+/g) || []).join('x');
+  if (im.natural !== want) iconFails.push('the ' + im.sizes + ' icon decoded as ' + im.natural);
+  if (im.pixels && !(im.pixels.clear > 0 && im.pixels.solid > im.pixels.total * 0.5)) {
+    iconFails.push('the ' + im.sizes + ' icon has no transparent corners or not enough solid ink: ' +
+      JSON.stringify(im.pixels));
+  }
+}
+console.log('  compared against the palette the icon was built from, while it was set (' +
+  ico.themeDuringRead + '): ' + JSON.stringify(ico.palette));
+
+/* What the decoded picture has to hold, taken from what it does hold. The 32 px frame carries the two
+   palette colours exactly - closest channel delta 0, 25 and 22 pixels of them. The 16 px frame carries
+   them blended: nearest pixels 3 and 4 away on one channel, 8 and 9 pixels within 40 - because a mark
+   at 16 px is a handful of pixels and all of its edges are blends. A downscale that had lost the
+   colours altogether would sit dozens away, so what is gated here is that both colours are present at
+   all and near enough to be the same ink, with a floor the small frame clears by three pixels. */
+for (const im of ico.images) {
+  for (const [name, n] of [['the colour used for X', im.p1], ['the colour used for O', im.p2]]) {
+    if (!n) { iconFails.push(im.sizes + ' icon: no palette colour could be read to compare against'); continue; }
+    if (n.closestChannelDelta > 8) {
+      iconFails.push(im.sizes + ' icon does not hold ' + name + ': its nearest pixel is ' +
+        n.closestChannelDelta + ' away from ' + n.want);
+    }
+    if (n.within40 < 5) {
+      iconFails.push(im.sizes + ' icon holds only ' + n.within40 + ' px of ' + name + ' (' + n.want + ')');
+    }
+  }
+}
+
+/* the mark enlarged, so it can be looked at rather than only counted - nearest-neighbour, because a
+   smooth enlargement of a 16 px drawing hides exactly the pixel work that makes it survive a tab */
+const zoom = JSON.parse(await evaluateSettled(`new Promise(function (done) {
+  var links = [].slice.call(document.querySelectorAll('link[rel="icon"]'));
+  var box = document.createElement('div');
+  box.id = 'qaIconZoom';
+  box.style.cssText = 'position:fixed;left:6px;top:6px;z-index:2147483000;background:#ffffff;' +
+    'padding:10px;display:flex;gap:12px;align-items:flex-end;color:#000000;font:11px monospace';
+  document.body.appendChild(box);
+  function fin() {
+    var r = box.getBoundingClientRect();
+    done(JSON.stringify({ x: r.left + window.scrollX, y: r.top + window.scrollY,
+      w: r.width, h: r.height }));
+  }
+  if (!links.length) { fin(); return; }
+  var left = links.length;
+  links.forEach(function (l) {
+    var img = new Image();
+    img.onload = img.onerror = function () {
+      if (img.naturalWidth) {
+        var c = document.createElement('canvas');
+        c.width = img.naturalWidth * 8; c.height = img.naturalHeight * 8;
+        var g = c.getContext('2d');
+        g.imageSmoothingEnabled = false;
+        g.drawImage(img, 0, 0, c.width, c.height);
+        var wrap = document.createElement('div');
+        var cap = document.createElement('div');
+        cap.textContent = img.naturalWidth + ' px, 8x';
+        wrap.appendChild(c); wrap.appendChild(cap);
+        box.appendChild(wrap);
+      }
+      if (!--left) fin();
+    };
+    img.src = l.href;
+  });
+})`));
+await shot('tab-icon.png', { x: zoom.x, y: zoom.y, width: zoom.w, height: zoom.h });
+await evaluate("(document.getElementById('qaIconZoom') || { remove: function () {} }).remove(); 'ok'");
+if (!zoom.w || !zoom.h) iconFails.push('the icons would not compose into a picture to look at');
+
 /* ---------- remembered settings, measured on the shipped file with a real reload ----------
    The values are put in through the real controls, then the page is left and come back to,
    because "remembered for new sessions" is only true if a new document asks for them again.
@@ -537,7 +718,9 @@ const restoredPrefs = await evaluate(
   "p1:getComputedStyle(document.documentElement).getPropertyValue('--p1').trim()," +
   "stoneButtonOn:(document.querySelector('#themeSeg button[data-theme=\\'paper\\']')||{}).classList.contains('on')," +
   "soundChk:document.getElementById('soundChk').checked," +
-  "movesAtStart:document.getElementById('stMoves').textContent," +
+  "iconLinks:document.querySelectorAll('link[rel=icon]').length," +
+   "iconSelf:[].every.call(document.querySelectorAll('link[rel=icon]'),function(l){return /^data:/.test(l.getAttribute('href')||'');})," +
+   "movesAtStart:document.getElementById('stMoves').textContent," +
   "logEmpty:/Nothing decided yet/.test(document.getElementById('logList').textContent)});})()");
 console.log('what a new session puts back: ' + restoredPrefs);
 console.log('and the board it drew: ' + await boardLook());
@@ -564,12 +747,21 @@ if (afterCorrupt.soundChk !== true) {
   prefsFails.push('a corrupt entry left the sound switch ' + afterCorrupt.soundChk + ' instead of the shipped default');
 }
 
+/* the shipped file, not the built copy: this is what a tab would use when someone opens the thing itself */
+console.log('the shipped file declares ' + back.iconLinks + ' icon links, self-contained: ' + back.iconSelf);
+if (back.iconLinks !== 2) iconFails.push('the shipped page declares ' + back.iconLinks + ' icons, not a 16 and a 32');
+if (back.iconSelf !== true) iconFails.push('an icon in the shipped page points outside the file');
+
+console.log('  ' + (iconFails.length ? 'FAILED: ' + iconFails.join('; ') :
+  'the tab carries the project mark: the 16 and 32 px frames the .ico holds, decodable by the browser, in the palette the stones use'));
+
 console.log('js errors: ' + (errors.length ? errors.join(' | ') : 'none'));
-/* The reports above describe what they measured and leave the reading to whoever runs them. Three
+/* The reports above describe what they measured and leave the reading to whoever runs them. Four
    things are plain enough to be wrong that they carry an exit code: the shape of the marker for the
-   last move, which way the position bar grew, and whether the sound switch came back as it was left. */
-if (markerFails.length || barFails.length || prefsFails.length || errors.length) {
-  console.log('FAILED: ' + [...markerFails, ...barFails, ...prefsFails,
+   last move, which way the position bar grew, whether the sound switch came back as it was left, and
+   whether the page still carries a decodable tab icon at the sizes it declares. */
+if (markerFails.length || barFails.length || prefsFails.length || iconFails.length || errors.length) {
+  console.log('FAILED: ' + [...markerFails, ...barFails, ...prefsFails, ...iconFails,
     errors.length ? 'the page logged console errors' : null].filter(Boolean).join('; '));
   process.exitCode = 1;
 }

@@ -327,7 +327,7 @@ checkbox that came back the other way is a setting that was not remembered.
 All plain Node (no packages, no test runner; developed on Node v24):
 
 ```
-node tests/file-check.mjs        # static gate (90 checks): the engine block parses and stays DOM-free, every ui.* exists, every theme palette defines every colour the first one does, a remembered setting is checked against the choices on offer, the decision log inserts at the top and trims from the bottom, the marker for the last move keeps the rule that gives it the shape of the mark it marks, the sound files are present and readable, and qa/probe.html is the built copy it claims to be
+node tests/file-check.mjs        # static gate (99 checks): the engine block parses and stays DOM-free, every ui.* exists, every theme palette defines every colour the first one does, a remembered setting is checked against the choices on offer, the decision log inserts at the top and trims from the bottom, the marker for the last move keeps the rule that gives it the shape of the mark it marks, the sound files are present and readable, the markup reaches outside the file for nothing (every src/href is a data: URI), the tab icon is exactly what match5.ico produces and stays under its byte budget, and qa/probe.html is the built copy it claims to be
 node tests/engine-test.mjs       # engine suite (~51,000 checks)
 node tests/icon-check.mjs        # the shipped icon: the container, every frame in it, the sizes a browser or shell asks for
 node tests/mp3-info.mjs          # what the five sound files are: codec, sample rate, duration counted in frames, peak and level
@@ -396,9 +396,47 @@ at 16px and 32px. System.Drawing on .NET Framework — the one PowerShell 5.1 ru
 render the PNG-compressed frames ("Requested range extends past the end of the array"); that is
 the old parser, not this file, since those frames parse standalone and the shell renders them.
 
-The game itself does not reference the icon. A page opened from `file://` picks up no icon on
-its own, and embedding one would mean carrying about 77 KB of base64 inside the single HTML
-file — a trade for whoever wants a tab icon, not a default to take silently.
+The page carries the tab icon, and it carries this mark rather than a second drawing of it.
+`qa/make-favicon.mjs` reads the 16 and 32 px frames out of `match5.ico` (`tests/ico-png.mjs` does the
+reading and the re-containing: no libraries, an ICO reader and a minimal PNG writer) — 32-bit bitmaps,
+whose alpha channel holds the real transparency and whose AND masks turn out to be all zero (measured,
+both) — and writes them into `match5.html` as PNG data URIs, one `<link rel="icon" sizes="…">` per
+size, so a browser picks the frame that matches the tab it is drawing instead of scaling one down. The
+bytes come out of the .ico instead of being typed in beside it, which is what keeps the tab and the
+shell one identity: `tests/file-check.mjs` re-derives them and fails when the page stops holding what
+`match5.ico` produces — the same shape as the gate for the built browser copy, which once went
+unnoticed for a whole round of changes. Measured cost: 864 and 1,958 bytes of PNG, 3,764 of base64,
+4,417 bytes added to a 128,906-byte page, about 3.4%. All nine frames as data would be 76,787 bytes,
+which is why only the two sizes a tab asks for are carried — and why the gate also fails past 8,192
+bytes, so that spending a quarter of the page on a picture the size of a fingernail has to be decided
+and not drift.
+
+`node qa/make-favicon.mjs` reports what each size would cost and whether the page holds exactly those
+bytes; `--write` writes them; `--sizes` asks for others. `match5.ico` has no 48 px frame and the tool
+answers by listing the sizes it does hold. The 96, 128 and 256 frames are already PNG-compressed
+inside the container, so carrying those would be a copy rather than a re-encode; the tool reads the
+bitmap frames, which is what the small sizes are.
+
+The reader and the writer in `tests/ico-png.mjs` are hand-written — an ICO directory walk, a bottom-up
+BGRA decode, a PNG filter pass, a zlib stream, a CRC32 — and a wrong sign or an off-by-one in any of
+them survives happily as long as one program reads what the same code wrote. So the bytes are also
+handed to decoders that are not that code: `node qa/dump-icon-png.mjs` writes them out as
+`qa/icon-16.png` and `qa/icon-32.png`, and `qa/favicon-pixel-check.ps1` (Windows only) asks GDI+ to
+decode the PNG while PowerShell itself walks the ICO, and compares. Measured: 256 of 256 pixels at
+16 px and 1,024 of 1,024 at 32 px read identically, with no pixel needing the premultiplied-alpha
+allowance the script also offers. Chrome accepting the file is not the same evidence as that.
+
+What a tab does with those bytes is a separate claim, and `qa/ui-check.mjs` measures it as far as a
+headless browser can: every declared icon must be self-contained and name its size, the browser must
+decode each one to exactly that size, the corners must stay transparent, and the decoded pixels must
+hold the two colours the stones use — read while the palette the icon was built from is the one in
+force, since the icon's cyan next to the paper theme's near-black ink would be a coincidence about
+black rather than a statement about the icon. The 32 px frame holds both exactly (closest channel
+delta 0, 25 and 22 pixels of them); the 16 px one holds them blended (nearest 3 and 4 away, 8 and 9
+pixels), which is what happens to a mark a few pixels wide when it is drawn small. The pass also
+enlarges both frames 8× nearest-neighbour into `qa/tab-icon.png`, because a smooth enlargement hides
+exactly the pixel work that lets a 16 px drawing survive a tab. What none of this can show is a tab
+strip: the QA browser is headless and has no tabs.
 
 `qa/icon-audit.txt` is the record of the audit this icon was accepted on. For each of the nine
 frames it lists the extent and bounding box of both marks, whether the ring is still a ring with
@@ -428,6 +466,7 @@ Then build the probe page and run the pass:
 
 ```powershell
 node qa/make-probe.mjs      # qa/probe.html = match5.html + qa/probe.js, injected before </body>
+node qa/make-favicon.mjs    # says whether the tab icon in match5.html is still what match5.ico produces; --write writes it
 node qa/cdp-drive.mjs
 ```
 
@@ -512,10 +551,13 @@ around a cross would fail, and the reason the cross is drawn with ends. For the 
 
 The position bar is checked by playing a line whose lead changes hands and reading the laid-out boxes
 rather than the style text, as described in [The position bar](#the-position-bar). It writes
-`qa/board-eval-bar.png`, with the bar grown towards the side that is ahead. Three of the pass's
-findings carry an exit code — the shape of the marker, which way the bar grew, and whether the sound
-switch came back as it was left — because those are things that can simply be wrong; the rest of the
-pass reports what it measured and leaves the reading to whoever runs it.
+`qa/board-eval-bar.png`, with the bar grown towards the side that is ahead. The tab icon is checked by
+having the browser decode it, as described in [Icon](#icon); it writes `qa/tab-icon.png`, the 16 px and
+32 px frames enlarged 8× nearest-neighbour. Four of the pass's findings carry an exit code — the shape
+of the marker, which way the bar grew, whether the sound switch came back as it was left, and whether
+the page still carries a decodable icon at the sizes it declares — because those are things that can
+simply be wrong; the rest of the pass reports what it measured and leaves the reading to whoever runs
+it.
 
 `node qa/sound-check.mjs` (18 checks) drives the shipped page in the browser: each of the five clips
 is asked for and starts, the length Chrome reports is compared with the length counted in frames and
