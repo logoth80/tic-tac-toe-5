@@ -28,6 +28,7 @@
    and let the engine play first; they must stay, and are, free of JS errors.
 */
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { readMp3 } from '../tests/mp3-info.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -52,8 +53,17 @@ ws.onmessage = (ev) => {
   else if (m.method === 'Log.entryAdded' && m.params.entry?.level === 'error') errors.push('LOG: ' + m.params.entry.text);
 };
 const send = (method, params = {}) => new Promise((res) => { const id = ++idc; pending.set(id, res); ws.send(JSON.stringify({ id, method, params })); });
-const evaluate = async (expression, awaitPromise) =>
-  (await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: !!awaitPromise })).result?.result?.value;
+/* A thrown expression comes back with exceptionDetails and no result, so reading only the result
+   turns a mistake in this script into a mysterious `undefined` - which is exactly how a copied probe
+   once reported a board of "0 cells" when what had actually happened was that its own code threw.
+   The value is returned as before; a throw now also says what it was. */
+const evaluate = async (expression, awaitPromise) => {
+  const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: !!awaitPromise });
+  if (r.exceptionDetails) {
+    console.log('  the page threw: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text));
+  }
+  return r.result?.result?.value;
+};
 const fileUrl = (p) => 'file:///' + path.join(ROOT, p).replace(/\\/g, '/');
 
 await send('Page.enable');
@@ -201,17 +211,30 @@ ok(await evaluate("document.getElementById('soundChk').checked") === false,
 ok((await picks()).length === 0, 'and the reopened page still asks for nothing until a mark is drawn');
 
 /* The assets themselves: decoded here, and the same files read from their frame headers by
-   tests/mp3-info.mjs. Two independent readers agreeing on a length is what makes that number real. */
+   tests/mp3-info.mjs. Two independent readers agreeing on a length is what makes that number real.
+   The bytes are handed over rather than fetched by the page: the game plays its clips with
+   `new Audio(url)`, which asks for no fetch and works from a file:// page as it stands, while a
+   `fetch('sounds/x.mp3')` *from* a file:// page is refused by this Chrome (all five came back
+   `TypeError: Failed to fetch`) unless the browser was started with --allow-file-access-from-files,
+   which the documented launch does not use. Decoding is the claim here, so the gate carries the
+   bytes itself and does not depend on how the browser happened to be started. */
 console.log('\nthe five clips, decoded in the page and read from their headers by Node');
-const decoded = await evaluate("(function(){var files=['marker-x1','marker-x2','marker-x3','marker-o1','marker-o2'];" +
-  "return Promise.all(files.map(function(f){return fetch('sounds/'+f+'.mp3').then(function(r){return r.arrayBuffer();})" +
+const CLIP_NAMES = ['marker-x1', 'marker-x2', 'marker-x3', 'marker-o1', 'marker-o2'];
+const carried = CLIP_NAMES.map((f) => ({
+  name: f, b64: readFileSync(path.join(ROOT, 'sounds', f + '.mp3')).toString('base64')
+}));
+console.log('  bytes handed to the page from this folder: ' +
+  carried.map((c) => c.name + ' ' + Math.round(c.b64.length * 3 / 4) + ' B').join(', '));
+const decoded = await evaluate("(function(){var files=" + JSON.stringify(carried) + ";" +
+  "return Promise.all(files.map(function(c){return Promise.resolve((function(){var s=atob(c.b64),u8=new Uint8Array(s.length);" +
+  "for(var i=0;i<s.length;i++)u8[i]=s.charCodeAt(i);return u8.buffer;})())" +
   ".then(function(b){return new (window.AudioContext||window.webkitAudioContext)().decodeAudioData(b);})" +
   ".then(function(a){var ch=a.getChannelData(0),peak=0,sq=0;" +
   "for(var i=0;i<ch.length;i++){var v=Math.abs(ch[i]);if(v>peak)peak=v;sq+=ch[i]*ch[i];}" +
   "var tail=0;for(var i=ch.length-1;i>=0;i--){if(Math.abs(ch[i])>0.01){tail=i;break;}}" +
-  "return {name:a.name||f,sampleRate:a.sampleRate,length:a.length,duration:a.duration," +
+  "return {name:a.name||c.name,sampleRate:a.sampleRate,length:a.length,duration:a.duration," +
   "peak:+peak.toFixed(3),rms:+Math.sqrt(sq/ch.length).toFixed(4)," +
-  "audibleMs:Math.round(tail/a.sampleRate*1000)};}).catch(function(e){return {name:f,error:String(e)};});}))" +
+  "audibleMs:Math.round(tail/a.sampleRate*1000)};}).catch(function(e){return {name:c.name,error:String(e)};});}))" +
   ".then(function(a){return JSON.stringify(a);});})()", true);
 const clips = JSON.parse(decoded);
 let silent = 0, bad = 0;

@@ -8,8 +8,15 @@
 // log and the opened panel. It also asks a browser to decode the icons the page carries and counts
 // their colours against the palette the stones use: a tab icon that only exists in the markup, or that
 // decodes into a picture of something else, is not a tab icon.
+// It also drives the page as an emulated phone - a 393×852 mobile viewport with touch - and measures
+// which parts of the page are actually drawn there, what the difficulty menu offers, what the board
+// measures in the pixels, and that a remembered desktop setting cannot reach a phone. A device that is
+// *not* classed as a phone is measured at a phone's window width too, because the safe direction of
+// that decision is that everything stays. The board is read out of the canvas bitmap through
+// qa/board-geo.mjs, the same instrument the one-off measuring scripts use.
 import fs from 'node:fs';
 import path from 'node:path';
+import { GRID_RAY, cellCentre } from './board-geo.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const QA = path.join(ROOT, 'qa');
@@ -755,13 +762,263 @@ if (back.iconSelf !== true) iconFails.push('an icon in the shipped page points o
 console.log('  ' + (iconFails.length ? 'FAILED: ' + iconFails.join('; ') :
   'the tab carries the project mark: the 16 and 32 px frames the .ico holds, decodable by the browser, in the palette the stones use'));
 
+/* ---------- a phone, as far as this machine can be one ----------
+   The page decides for itself whether it is on a phone, from `(hover: none) and (pointer: coarse)`
+   and the short edge of the device, so the only honest way to test that branch is to make the browser
+   answer those questions the way a phone does. Chrome's own device emulation does: measured first in a
+   one-off probe, plain here reports hover:hover / pointer:fine and a screen of 800×600 - which is why
+   the page needs both halves of its test and why a screen-size test alone would have called this very
+   browser a phone - while a 393×852 mobile emulation reports hover:none / pointer:coarse and a screen
+   of 393×852, with five touch points.
+   So what follows is measured on an emulated phone in a desktop browser. What stays unmeasured here:
+   how long a level's clock really takes on a phone's silicon, whether a thumb reaches anything, and
+   how the layout looks on glass. Those need the device. */
+const phoneFails = [];
+/* Controls a phone is not given and a desktop is. */
+const PHONE_ONLY = ['modeRow', 'sizeRow', 'sizeSel', 'sideWrap', 'sideSel', 'undoBtn', 'hintBtn',
+  'evalWrap', 'logCard', 'reportCard', 'notesCard', 'settingsCard', 'keysLine'];
+/* Controls the game itself hides in single-player mode on any device - there is no second engine and
+   no demo delay to set. They must not appear on a phone either, but a desktop in this mode does not
+   show them either, so they are not evidence either way about the phone profile. */
+const MODE_HIDDEN = ['lvl2Wrap', 'lvl2Sel', 'speedWrap'];
+const HIDES = PHONE_ONLY.concat(MODE_HIDDEN);
+const KEEPS = ['themeSeg', 'newBtn', 'lvl1Sel', 'soundChk', 'board', 'sc1', 'turnTxt'];
+const SHOWN = `(function(){function shown(id){var e=document.getElementById(id);if(!e)return 'no such element';
+  var cs=getComputedStyle(e);if(cs.display==='none')return 'not drawn';
+  if(cs.visibility==='hidden'||+cs.opacity===0)return 'invisible';
+  /* an element inside something that is not drawn gets no boxes at all, and is not on the screen any
+     more than a control whose own row was taken away - counting its own display property alone would
+     call it visible */
+  if(!e.getClientRects().length)return 'not drawn';
+  var r=e.getBoundingClientRect();if(r.width<1||r.height<1)return 'drawn with no size';
+  return 'on screen at '+Math.round(r.width)+'x'+Math.round(r.height);}
+  var o={};(${JSON.stringify(HIDES.concat(KEEPS))}).forEach(function(id){o[id]=shown(id);});
+  o.screen=[screen.width,screen.height];o.media=matchMedia('(hover: none) and (pointer: coarse)').matches;
+  o.viewport=[innerWidth,innerHeight];o.pageHeight=document.documentElement.scrollHeight;
+  /* sideways scroll is what a page that is wider than the window asks for; on a phone it is the
+     difference between a board you can see and one you have to push the whole page for */
+  o.scrollWidth=document.documentElement.scrollWidth;
+  o.noSidewaysScroll=document.documentElement.scrollWidth<=document.documentElement.clientWidth;
+  var b=document.getElementById('board').getBoundingClientRect();
+  o.boardFits=b.top>=0&&b.bottom<=innerHeight;o.boardOnScreen=[Math.round(b.top),Math.round(b.bottom)];
+  var s=document.getElementById('lvl1Sel');
+  o.levels=[].map.call(s.options,function(x){return x.value;});
+  o.levelSelected=s.value;
+  o.levelLabels=[].map.call(s.options,function(x){return x.textContent;});
+  o.sizeSelValue=s&&document.getElementById('sizeSel').value;
+  o.tagline=document.getElementById('tagline').textContent;
+  o.prefCap=document.getElementById('prefCap').textContent.slice(0,60);
+  return JSON.stringify(o);})()`;
+/* The board size is read out of the pixels, with the same instrument the one-off measuring scripts
+   use (qa/board-geo.mjs) - the grid lines drawn, the distance between them, and what number of cells
+   that distance divides the canvas into. It is shared rather than copied because an earlier copy of
+   this pass reported a board of no cells at all and nothing about the reading said why; the shared one
+   reports the colour it looked for, how far that colour is from the board's own surface, and how many
+   pixels sit near it, so a null reading is explained by the same line that reported it. */
+const readJson = async (expr, what) => {
+  /* A reading that cannot be taken has to be reported as that, not carried on as undefined into the
+     next line, where it reads like a value the page gave rather than a hole in the instrument. */
+  const raw = await evaluate(expr);
+  if (typeof raw !== 'string') { phoneFails.push('could not read ' + what + ' (the probe returned ' + raw + ')'); return null; }
+  try { return JSON.parse(raw); } catch (e) {
+    phoneFails.push('could not read ' + what + ' (not JSON: ' + String(raw).slice(0, 60) + ')');
+    return null;
+  }
+};
+const phoneOpen = async () => {
+  await send('Page.navigate', { url: 'about:blank' });
+  await sleep(500);
+  await send('Page.navigate', { url: fileUrl('index.html') });
+  await sleep(2500);
+  return readJson(SHOWN, 'which parts of a page are drawn');
+};
+
+await evaluate("localStorage.removeItem('match5.prefs.v1'); 'nothing remembered'");
+await send('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 3, mobile: true });
+await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+const fresh = await phoneOpen();
+const geo = await readJson(GRID_RAY, 'the grid the phone page drew');
+console.log('\n--- an emulated phone: 393x852, mobile, touch');
+console.log('  it says it is a phone the way the page asks: media ' + (fresh && fresh.media) + ', screen ' + (fresh && fresh.screen.join('x')));
+if (!fresh || !geo) {
+  phoneFails.push('the phone page gave nothing to measure, so the rest of this pass cannot say anything about it');
+} else {
+  console.log('  not drawn: ' + HIDES.filter((k) => fresh[k] === 'not drawn').join(', '));
+  console.log('  still on screen: ' + KEEPS.map((k) => k + '=' + fresh[k]).join(', '));
+  console.log('  the difficulty menu offers: ' + fresh.levels.join(' | ') + ' - and starts on ' + fresh.levelSelected);
+  fresh.levelLabels.forEach((l) => console.log('     ' + l));
+  console.log('  the board drawn there: ' + geo.lines + ' grid lines (grid colour found in ' + geo.hitColumns +
+    ' columns at tolerance ' + geo.toleranceUsed + ', the surface being ' + geo.gridMinusFelt +
+    ' away from it), ' + geo.pitch + ' px apart, which divides ' + geo.canvas[0] + ' px into ' + geo.cells + ' cells');
+  console.log('     theme ' + geo.theme + ', grid declared as ' + JSON.stringify(geo.declaredGrid) +
+    ' read as ' + JSON.stringify(geo.parsedTo) + '; near the grid colour along the middle row: ' +
+    Object.entries(geo.nearOnMiddleRow).map(([t, n]) => t + ':' + n).join(' '));
+  if (!geo.lines) console.log('     the middle row of that canvas holds: ' + geo.rowColours.join(' | '));
+  console.log('  the line under the title now says: ' + fresh.tagline);
+  console.log('  the caption under the buttons now says: ' + fresh.prefCap + '...');
+  console.log('  the window it is laid out in: ' + fresh.viewport.join('x') + ' CSS px; the document is ' +
+    fresh.scrollWidth + ' px wide, so nothing sticks out sideways: ' + fresh.noSidewaysScroll);
+  console.log('  the page is ' + fresh.pageHeight + ' px of content tall and the board occupies ' +
+    fresh.boardOnScreen.join('-') + ' of the ' + fresh.viewport[1] + ' px visible without scrolling: ' + fresh.boardFits);
+
+  if (!fresh.media) phoneFails.push('the emulated phone did not report hover:none/pointer:coarse, so the branch under test never ran');
+  for (const k of HIDES) if (fresh[k] !== 'not drawn') phoneFails.push('a phone still shows ' + k + ' (' + fresh[k] + ')');
+  for (const k of KEEPS) if (fresh[k] === 'not drawn') phoneFails.push('a phone is missing ' + k);
+  if (fresh.levels.join(',') !== 'easy,medium') phoneFails.push('the difficulty menu offers ' + fresh.levels.join(',') + ', not only easy and medium');
+  if (fresh.levelSelected !== 'medium') phoneFails.push('a phone with nothing remembered opened on ' + fresh.levelSelected + ', not the middle of its two levels');
+  if (geo.cells !== 13 || fresh.sizeSelValue !== '13') {
+    phoneFails.push('the board a phone gets measured ' + geo.cells + ' cells across with the size control at ' + fresh.sizeSelValue);
+  }
+  if (!/13×13/.test(fresh.tagline)) phoneFails.push('the page describes a board that is not the one it drew: ' + fresh.tagline);
+  if (!fresh.noSidewaysScroll) {
+    phoneFails.push('in a ' + fresh.viewport[0] + ' px window the phone page is ' + fresh.scrollWidth +
+      ' px wide, so a phone would have to push the page sideways to see the board');
+  }
+  if (!fresh.boardFits) {
+    phoneFails.push('the board is not fully visible at a phone height: it occupies ' +
+      fresh.boardOnScreen.join('-') + ' of a ' + fresh.viewport[1] + ' px window');
+  }
+}
+
+/* A phone is not a two-player game with the second player hidden: the check is that one tap answers
+   itself. The tap is a real touch through the browser's input pipeline, and the page is asked what
+   kind of pointer it felt - which is also how the probe knows it is still talking to the same page. */
+if (geo && geo.pitch) {
+  const centre = cellCentre(geo, 6, 6);
+  const armed = await readJson("(function(){window.__ptr=[];document.getElementById('board').addEventListener(" +
+    "'pointerdown',function(e){window.__ptr.push(e.pointerType);},true);" +
+    "return JSON.stringify({armed:Array.isArray(window.__ptr)});})()", 'whether the pointer probe armed');
+  const at = await readJson("(function(){var cv=document.getElementById('board'),r=cv.getBoundingClientRect();" +
+    "return JSON.stringify({x:Math.round(r.left+" + centre.x + "*(r.width/cv.width))," +
+    "y:Math.round(r.top+" + centre.y + "*(r.height/cv.height)),cell:[6,6]});})()", 'where the middle of that board is');
+  if (armed && armed.armed && at) {
+    await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
+    await sleep(80);
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    let phoneWait = 0;
+    let moves = '0';
+    while (phoneWait < 20000) {
+      moves = await evaluate("document.getElementById('stMoves').textContent");
+      if (moves === '2') break;
+      await sleep(400); phoneWait += 400;
+    }
+    const after = await readJson("(function(){return JSON.stringify({ptr:window.__ptr||'gone'," +
+      "depth:document.getElementById('stDepth').textContent,by:document.getElementById('stBy').textContent," +
+      "logLines:document.querySelectorAll('#logList .msg').length," +
+      "logHidden:getComputedStyle(document.getElementById('logCard')).display," +
+      "cands:document.querySelectorAll('#candBody tr').length});})()", 'what the tap did');
+    if (after) {
+      console.log('  one touch at ' + at.x + ',' + at.y + ' -> pointer types the page felt: ' +
+        (Array.isArray(after.ptr) ? after.ptr.join(',') : after.ptr));
+      console.log('  moves after that single tap: ' + moves + ' (a second one can only be the CPU answering)');
+      console.log('  the engine still searched, in a card nobody is shown: by ' + after.by + ', depth ' + after.depth +
+        ', ' + after.cands + ' candidates listed, ' + after.logLines + ' log lines written, log card display=' + after.logHidden);
+      if (!Array.isArray(after.ptr) || after.ptr.join(',') !== 'touch') {
+        phoneFails.push('the tap arrived as ' + (Array.isArray(after.ptr) ? after.ptr.join(',') : after.ptr) + ', not as a touch');
+      }
+      if (moves !== '2') phoneFails.push('after one tap there were ' + moves + ' moves, so the CPU is not answering on a phone');
+      if (after.depth === '—') phoneFails.push('no search ran behind the phone screen, so hiding the report would hide a result that was never produced');
+    }
+
+    /* The one setting a phone is asked to operate: the board colour. Switching it must not bring any
+       of the taken-away controls back, because a colour change goes through the same code that
+       decides what is shown. */
+    await evaluate("document.querySelector('#themeSeg button[data-theme=\\'paper\\']').click(); 'paper'");
+    await sleep(900);
+    const afterTheme = await readJson(SHOWN, 'what is drawn after a phone changes the board colour');
+    const themeOf = await evaluate("document.documentElement.getAttribute('data-theme')||'slate'");
+    const backHidden = afterTheme ? HIDES.filter((k) => afterTheme[k] !== 'not drawn') : HIDES;
+    console.log('  after the board colour was switched on that phone: theme ' + themeOf +
+      ', and these came back: ' + (backHidden.length ? backHidden.join(', ') : 'nothing'));
+    if (themeOf !== 'paper') phoneFails.push('the board colour control did not change the theme on a phone (still ' + themeOf + ')');
+    if (backHidden.length) phoneFails.push('a colour switch on a phone brought back: ' + backHidden.join(', '));
+  } else {
+    phoneFails.push('no board was found to tap on the phone page, so its play was not measured');
+  }
+}
+
+/* What a phone remembers, and what it refuses to inherit. */
+await evaluate("var s=document.getElementById('lvl1Sel'); s.value='easy'; s.dispatchEvent(new Event('change',{bubbles:true})); 'easy'");
+await sleep(700);
+const keptEasy = await phoneOpen();
+const easyGeo = await readJson(GRID_RAY, 'the board after a phone chose Easy');
+if (keptEasy && easyGeo) {
+  console.log('  a phone left on Easy comes back offering ' + keptEasy.levels.join(',') + ' with ' +
+    keptEasy.levelSelected + ' picked, on a ' + easyGeo.cells + '-cell board');
+  if (keptEasy.levels.join(',') !== 'easy,medium') phoneFails.push('the phone menu changed after a reload: ' + keptEasy.levels.join(','));
+  if (keptEasy.levelSelected !== 'easy') phoneFails.push('a phone left on Easy came back on ' + keptEasy.levelSelected);
+  if (easyGeo.cells !== 13) phoneFails.push('changing the difficulty moved the board to ' + easyGeo.cells + ' cells');
+}
+await evaluate("localStorage.setItem('match5.prefs.v1','{\\\"v\\\":1,\\\"size\\\":31,\\\"level1\\\":\\\"master\\\",\\\"level2\\\":\\\"expert\\\",\\\"theme\\\":\\\"slate\\\",\\\"sound\\\":true}'); 'a desktop entry'");
+const inherited = await phoneOpen();
+const inhGeo = await readJson(GRID_RAY, 'the board after a remembered desktop entry');
+if (inherited && inhGeo) {
+  console.log('  given a remembered 31x31 board and a Master engine, a phone comes up with ' + inhGeo.cells +
+    ' cells drawn, the size control at ' + inherited.sizeSelValue + ', a menu of ' + inherited.levels.join(',') +
+    ' picked on ' + inherited.levelSelected);
+  if (inhGeo.cells !== 13) phoneFails.push('a remembered desktop board reached the phone: ' + inhGeo.cells + ' cells drawn');
+  if (inherited.levels.join(',') !== 'easy,medium') {
+    phoneFails.push('a remembered desktop level left the phone offering ' + inherited.levels.join(','));
+  }
+  if (inherited.levelSelected !== 'medium') {
+    phoneFails.push('a level above what a phone offers came through as ' + inherited.levelSelected + ' instead of the middle of its menu');
+  }
+}
+
+/* The other half of the promise: a device that is not classed as a phone keeps everything, even when
+   its window is the width of a phone. That case is measured on its own, without the touch and
+   coarse-pointer signals, because it is exactly what an undetected phone gets - and because a
+   phone-width window is where the layout was broken: the board card was 734 px wide inside a 342 px
+   column, the document was 752 px wide, and the page scrolled sideways. The phone branch above is
+   measured with the same window width, so both halves are now measured at it. */
+await send('Emulation.setTouchEmulationEnabled', { enabled: false });
+await send('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 2, mobile: false });
+await evaluate("localStorage.removeItem('match5.prefs.v1'); 'nothing remembered'");
+const narrow = await phoneOpen();
+const narrowGeo = await readJson(GRID_RAY, 'the grid at a phone-width window');
+if (narrow && narrowGeo) {
+  console.log('\n--- a phone-width window that the page does not call a phone (393x852, no touch, screen ' + narrow.screen.join('x') + ')');
+  console.log('  the page called it a phone: ' + narrow.media + ' (it must not - the safe direction is that everything stays)');
+  console.log('  not drawn here: ' + (PHONE_ONLY.filter((k) => narrow[k] === 'not drawn').join(', ') || 'nothing'));
+  console.log('  the board drawn at this width: ' + narrowGeo.lines + ' grid lines, ' + narrowGeo.pitch +
+    ' px apart, ' + narrowGeo.cells + ' cells, canvas ' + narrowGeo.canvas[0] + ' px; the window is ' +
+    narrow.viewport[0] + ' px and the document ' + narrow.scrollWidth + ' px, so nothing sticks out sideways: ' + narrow.noSidewaysScroll);
+  console.log('  the difficulty menu offers ' + narrow.levels.length + ' levels: ' + narrow.levels.join(','));
+  if (narrow.media !== false) phoneFails.push('a desktop screen at a phone width was classed as a phone, so the full UI was taken away somewhere it should not be');
+  for (const k of PHONE_ONLY) if (narrow[k] === 'not drawn') phoneFails.push('a window only ' + narrow.viewport[0] + ' px wide lost ' + k);
+  if (narrow.levels.length < 5) phoneFails.push('at a phone width a non-phone is offered only ' + narrow.levels.join(','));
+  if (narrowGeo.lines < 2) phoneFails.push('at a phone width the page drew ' + narrowGeo.lines + ' grid lines - no board to play on');
+  if (narrowGeo.cells !== 25) phoneFails.push('at a phone width a non-phone got a ' + narrowGeo.cells + '-cell board, not the 25 it was not told to give up');
+  if (!narrow.noSidewaysScroll) phoneFails.push('at a phone width the document is ' + narrow.scrollWidth + ' px in a ' + narrow.viewport[0] + ' px window: sideways scroll');
+}
+
+/* And the desktop, with the emulation taken away, must still be the whole game. */
+await send('Emulation.clearDeviceMetricsOverride');
+await evaluate("localStorage.removeItem('match5.prefs.v1'); 'nothing remembered'");
+const desktop = await phoneOpen();
+console.log('\n--- the same browser with the phone emulation taken away');
+if (desktop) {
+  console.log('  it says it is a phone: ' + desktop.media + ' (must be false)');
+  console.log('  not drawn on a desktop: ' + (PHONE_ONLY.filter((k) => desktop[k] === 'not drawn').join(', ') || 'nothing'));
+  console.log('  the difficulty menu offers ' + desktop.levels.length + ' levels: ' + desktop.levels.join(','));
+  if (desktop.media !== false) phoneFails.push('this browser still believed it was a phone after the emulation was cleared');
+  for (const k of PHONE_ONLY) if (desktop[k] === 'not drawn') phoneFails.push('a desktop lost ' + k);
+  if (desktop.levels.length < 5) phoneFails.push('a desktop is offered only ' + desktop.levels.join(','));
+}
+if (phoneFails.length) console.log('\n  phone pass: ' + phoneFails.length + ' thing(s) wrong');
+else console.log('\n  the phone gets one game: 13×13 against the CPU at Easy or Medium, with colour, New game and sound as its only settings; and a device that is not a phone keeps all of it');
+await evaluate("localStorage.removeItem('match5.prefs.v1'); 'left clean'");
+await send('Page.navigate', { url: 'about:blank' });
+await sleep(400);
+
 console.log('js errors: ' + (errors.length ? errors.join(' | ') : 'none'));
-/* The reports above describe what they measured and leave the reading to whoever runs them. Four
+/* The reports above describe what they measured and leave the reading to whoever runs them. Five
    things are plain enough to be wrong that they carry an exit code: the shape of the marker for the
-   last move, which way the position bar grew, whether the sound switch came back as it was left, and
-   whether the page still carries a decodable tab icon at the sizes it declares. */
-if (markerFails.length || barFails.length || prefsFails.length || iconFails.length || errors.length) {
-  console.log('FAILED: ' + [...markerFails, ...barFails, ...prefsFails, ...iconFails,
+   last move, which way the position bar grew, whether the sound switch came back as it was left,
+   whether the page still carries a decodable tab icon at the sizes it declares, and whether a phone
+   gets the single game it was promised while a desktop keeps everything. */
+if (markerFails.length || barFails.length || prefsFails.length || iconFails.length || phoneFails.length || errors.length) {
+  console.log('FAILED: ' + [...markerFails, ...barFails, ...prefsFails, ...iconFails, ...phoneFails,
     errors.length ? 'the page logged console errors' : null].filter(Boolean).join('; '));
   process.exitCode = 1;
 }

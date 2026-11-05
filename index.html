@@ -149,6 +149,13 @@
   /* The board and its decision log are one column, so the log starts immediately under the
      board even when the sidebar beside them is taller than the board. */
   #playCol { display: grid; gap: 18px; min-width: 0; }
+  /* The cards inside that column need it too. A grid item's minimum size is its content's minimum,
+     and the board's canvas is content with a width of its own - measured at a 393 px window: the
+     column was 342 px, the card 734, the canvas 708. The card overflowed the column it was in, the
+     document became 752 px wide and scrolled sideways, and the board could never be made smaller:
+     layoutBoard reads the width of a host that the board itself was holding open. min-width:0 lets
+     the column decide the width and the board follows it. */
+  #playCol > * { min-width: 0; }
   #playCol > .card + .card { margin-top: 0; }
   @media (max-width: 980px) { .layout { grid-template-columns: minmax(0, 1fr); } }
 
@@ -318,7 +325,7 @@
 <div class="wrap">
   <header class="top">
     <h1>MATCH<span>·</span>5</h1>
-    <p>Five in a row on a 25×25 grid · 0–2 players · alpha–beta search AI with iterative deepening</p>
+    <p id="tagline">Five in a row on a 25×25 grid · 0–2 players · alpha–beta search AI with iterative deepening</p>
   </header>
 
   <div class="layout">
@@ -333,7 +340,7 @@
       <!-- The game's own history, under the board it describes and as wide as that board. The
            Engine report in the sidebar holds only the last move; this holds the whole game, in
            the order it happened, in the colours of the stones that made it. -->
-      <section class="card">
+      <section class="card" id="logCard">
         <h2>Decision log</h2>
         <div class="body">
           <div class="log" id="logList"><p class="empty">Nothing decided yet — every search an engine makes is written here, newest first.</p></div>
@@ -349,7 +356,7 @@
       <div class="card">
         <h2>Game</h2>
         <div class="body">
-          <div class="row">
+          <div class="row" id="modeRow">
             <div style="flex:1 1 100%">
               <div class="seg" id="modeSeg">
                 <button data-mode="pvp">2 Players</button>
@@ -358,8 +365,8 @@
               </div>
             </div>
           </div>
-          <div class="row">
-            <label class="f">Board
+          <div class="row" id="sizeRow">
+            <label class="f" id="sizeWrap">Board
               <select id="sizeSel"></select>
             </label>
             <label class="f" id="sideWrap">You play
@@ -403,7 +410,7 @@
               <button class="btn" id="hintBtn">Hint</button>
             </div>
           </div>
-          <p class="cap">The board size, the difficulty, the board colour and whether marks make a
+          <p class="cap" id="prefCap">The board size, the difficulty, the board colour and whether marks make a
             sound are kept on this computer and put back when the page is opened again. A game in
             progress is not kept.</p>
           <div class="score" style="margin-top:12px">
@@ -412,7 +419,7 @@
             <div><b id="sc2">0</b><span>O</span></div>
           </div>
           <div class="turnline"><span class="pip p1" id="turnPip"></span><span id="turnTxt">X to move</span></div>
-          <div class="evalwrap">
+          <div class="evalwrap" id="evalWrap">
             <div class="evalbar"><i id="evalX" class="tox"></i><i id="evalO" class="too"></i><u></u></div>
             <span class="evalnum" id="evalNum">0.0</span>
           </div>
@@ -426,7 +433,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" id="reportCard">
         <h2>Engine report</h2>
         <div class="body">
           <dl class="kv">
@@ -449,7 +456,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" id="notesCard">
         <h2>Notes</h2>
         <div class="body note">
           Win by lining up <b>5 stones</b> horizontally, vertically or diagonally. The engine scores every
@@ -516,7 +523,7 @@
     </aside>
   </div>
 
-  <p class="keys"><b>N</b> new game · <b>U</b> undo · <b>H</b> hint · <b>click</b> place · <b>Esc</b> clear hint</p>
+  <p class="keys" id="keysLine"><b>N</b> new game · <b>U</b> undo · <b>H</b> hint · <b>click</b> place · <b>Esc</b> clear hint</p>
 </div>
 
 <!-- ================= ENGINE (also used verbatim inside the Web Worker) ================= -->
@@ -1421,6 +1428,31 @@ function Match5Engine() {
   const SIZES = [9, 13, 15, 19, 25, 31];
   const THEMES = ['slate', 'paper'];   // the two colour blocks in the CSS; the page has no third
 
+  /* ---------------- what a phone is, and what it is given ----------------
+     Decided once, when the page opens, and never while a game is running - a layout that changed
+     midway through a move would be worse than the one it replaced.
+
+     Two tests, both needed, neither enough on its own. `(hover: none) and (pointer: coarse)` says
+     this computer is only ever touched. `screen` is measured in CSS pixels and describes the device,
+     not the window, so turning a phone sideways cannot move the page into another layout; its short
+     edge decides, because a phone's is 360-450 and a tablet's is 744 and up.
+
+     This was measured rather than assumed, because the obvious single test is not safe: the headless
+     browser every QA pass here runs in reports `hover: hover` and `pointer: fine` - so it keeps the
+     full controls - while its `screen` reads 800×600, which a screen-size test alone would have
+     called a phone. Under Chrome's own phone emulation (393×852, mobile, touch) those same media
+     queries read `none`/`coarse` and `screen` reads 393×852, and that is what the QA pass measures
+     this against. A device that fails either test gets everything, which is the direction where
+     nothing is missing: an undetected phone plays the same game with the settings still on screen. */
+  const PHONE_SIZE = 13;
+  const PHONE_LEVELS = ['easy', 'medium'];
+  const isPhone = (() => {
+    let touched = false;
+    try { touched = matchMedia('(hover: none) and (pointer: coarse)').matches; } catch (e) { touched = false; }
+    const short = Math.min(screen.width || 0, screen.height || 0);
+    return touched && short > 0 && short <= 720;
+  })();
+
   const $ = (id) => document.getElementById(id);
   const canvas = $('board'), ctx = canvas.getContext('2d');
 
@@ -1442,6 +1474,11 @@ function Match5Engine() {
     pTactic: $('pTactic'), pExt: $('pExt'), pTT: $('pTT'),
     stBy: $('stBy'), logList: $('logList'), settingsCard: $('settingsCard'), setPeek: $('setPeek'),
     thinkDots: $('thinkDots'), thinkTxt: $('thinkTxt'), boardHost: $('boardHost'),
+    /* the parts a phone is not shown: named here so the page can rewrite the text that sits in them,
+      and taken away as one list at the end of applyVisibility, where the rule lives */
+    tagline: $('tagline'), keysLine: $('keysLine'), prefCap: $('prefCap'),
+    modeRow: $('modeRow'), sizeRow: $('sizeRow'), sizeWrap: $('sizeWrap'), evalWrap: $('evalWrap'),
+    logCard: $('logCard'), reportCard: $('reportCard'), notesCard: $('notesCard'),
     board: canvas
   };
 
@@ -2181,8 +2218,18 @@ function Match5Engine() {
   /* ---------------- drawing ---------------- */
   let dirty = true, cell = 22, pad = 14, cssSize = 700, dpr = 1, tAnim = 0;
 
+  /* The board is square and never wider than the window it is in. The host's width is the primary
+     measure - that is the column the page gives it - and the document's own width is a backstop
+     against the loop the host alone can fall into: the canvas is content with a width of its own, so
+     a host inside a column that cannot shrink reports the width the board already has, and a board
+     sized from that never shrinks again. Measured at a 393 px window before this was fixed: column
+     342, card 734, canvas 708, document 752 - the whole page scrolled sideways and narrowing the
+     window further only moved the board by the difference (360 px of window still gave 695 px of
+     board). The 30 is deliberately a little less than the page's own 36 px of side padding: when the
+     host is reporting an honest width this never binds, and it only bites when the host is being held
+     open by the board itself. */
   function layoutBoard() {
-    const avail = Math.max(260, ui.boardHost.clientWidth - 4);
+    const avail = Math.max(260, Math.min(ui.boardHost.clientWidth - 4, document.documentElement.clientWidth - 30));
     const size = Math.min(avail, 760);
     const n = S.size;
     pad = n > 19 ? 12 : 16;
@@ -2436,8 +2483,11 @@ function Match5Engine() {
     if (ev.target && /input|select|textarea/i.test(ev.target.tagName)) return;
     const k = ev.key.toLowerCase();
     if (k === 'n' || k === ' ') { ev.preventDefault(); newGame(); }
-    else if (k === 'u') undo();
-    else if (k === 'h') hint();
+    /* A phone has no Undo or Hint control, so it has no shortcut for them either: a key that acts on
+       something not on the screen is something happening for no visible reason. A phone with a
+       keyboard attached is rarer than that confusion, and nothing about the game needs those keys. */
+    else if (k === 'u' && !isPhone) undo();
+    else if (k === 'h' && !isPhone) hint();
     else if (k === 'escape') { S.hint = -1; dirty = true; }
   });
 
@@ -2484,6 +2534,20 @@ function Match5Engine() {
   if (rSound !== null) S.sound = rSound;
   /* end of remembered settings */
 
+  /* A phone's settings are not on offer, so they are not read back either: a remembered 25×25 or a
+     remembered Hard belongs to a device that was offering those choices. What a phone keeps is the
+     difficulty when it is one of the two it offers, the board colour, and the sound - and the game
+     itself is the one it is given: against the CPU, on a 13×13 board, with the human moving first.
+     This runs after the read-back and before any control is filled in, so nothing on screen can
+     disagree with the state. */
+  if (isPhone) {
+    S.mode = 'pvc';
+    S.size = PHONE_SIZE;
+    S.humanSide = A;
+    S.level1 = PHONE_LEVELS.indexOf(S.level1) >= 0 ? S.level1 : 'medium';
+    S.level2 = S.level1;
+  }
+
   /* ---------------- control wiring ---------------- */
   SIZES.forEach((n) => {
     const o = document.createElement('option');
@@ -2494,7 +2558,9 @@ function Match5Engine() {
 
   /* A level is a clock, so the menu says what it buys: the time per move, how deep that is
      allowed to go, and how many cores the time is spent on. Nothing about the strength is hidden. */
-  ENG.LEVEL_ORDER.forEach((lv) => {
+  /* A phone is offered two levels, and only the two that stay inside a phone's clock. The label is
+     still built from the same level table, so what the menu says is what the engine will do. */
+  (isPhone ? PHONE_LEVELS : ENG.LEVEL_ORDER).forEach((lv) => {
     const c = ENG.LEVELS[lv];
     const cores = threadsFor(lv, null);
     const text = c.label + ' — ' + (c.timeMs / 1000).toFixed(1) + ' s, up to ' + c.maxDepth + ' plies, ' +
@@ -2532,6 +2598,27 @@ function Match5Engine() {
     ui.speedWrap.style.display = S.mode === 'cvc' ? '' : 'none';
     ui.modeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.mode === S.mode));
     ui.themeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.theme === S.theme));
+    /* ---------------- what a phone is not shown ----------------
+       This runs last, after the mode logic above, because that logic is what would otherwise put
+       some of these back. Taking them away rather than greying them out is deliberate: a greyed
+       control promises that something comes back if you tap it, and none of these do. One list,
+       here rather than in the stylesheet, so there is one place that holds the answer.
+       What a phone screen keeps is the board, the score, the turn, and four controls: the board
+       colour, New game, the difficulty (two levels) and the pencil sound. The engine is not
+       shortened by any of this - the search, the clock and the level of play are exactly as on any
+       other device. A phone gets a smaller menu, not a weaker opponent. */
+    if (isPhone) {
+      for (const name of ['modeRow', 'sizeRow', 'sideWrap', 'evalWrap', 'logCard', 'reportCard',
+        'notesCard', 'settingsCard', 'keysLine', 'undoBtn', 'hintBtn']) {
+        if (ui[name]) ui[name].style.display = 'none';
+      }
+      ui.tagline.textContent = 'Five in a row on a ' + PHONE_SIZE + '×' + PHONE_SIZE +
+        ' grid · you against the CPU';
+      ui.prefCap.textContent = 'On a phone the board is ' + PHONE_SIZE + '×' + PHONE_SIZE +
+        ' and the game is against the CPU; those ' +
+        'are not chosen here. The difficulty, the board colour and the sound are kept on this phone ' +
+        'and put back when the page is opened again.';
+    }
   }
 
   ui.modeSeg.addEventListener('click', (ev) => {

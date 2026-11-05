@@ -52,7 +52,9 @@ ok(external.length === 0, 'the markup reaches outside the file for: ' + external
 {
   const uiSrc = (html.match(/<script>\s*\(function \(\)\s*\{[\s\S]*?<\/script>/) || [''])[0];
   ok(uiSrc.length > 0, 'could not locate the UI script block');
-  const mapLit = (uiSrc.match(/const ui = \{([\s\S]*?)\};/) || [])[1] || '';
+  /* Comments inside the map are documentation, not keys: strip them first, or a comment placed
+     between a comma and the next handle makes that handle look undeclared and the page is fine. */
+  const mapLit = (((uiSrc.match(/const ui = \{([\s\S]*?)\};/) || [])[1] || '').replace(/\/\*[\s\S]*?\*\//g, ' '));
   const keys = [...mapLit.matchAll(/(?:^|[,{])\s*([A-Za-z0-9_]+):/g)].map((m) => m[1]);
   ok(keys.length > 10, 'ui map should list the DOM handles, found ' + keys.length);
 

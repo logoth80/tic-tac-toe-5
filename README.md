@@ -27,6 +27,11 @@ The **board size, the difficulty, the board colour and the sound switch are kept
 put back when the page is opened again — see [what the page remembers](#what-the-page-remembers). A
 game in progress is not kept, and neither is the mode.
 
+A phone is not shown this whole list. It gets one game — 13×13, against the CPU — and the only
+settings on its screen are the board colour, New game, the difficulty (Easy or Medium) and the pencil
+sound; the report, the log, the position bar and the rest are not rendered and cannot be turned on.
+See [on a phone](#on-a-phone).
+
 ## Strength is a clock
 
 A level says how long the CPU may think, and how deep it is allowed to spend that
@@ -311,7 +316,14 @@ opened again.
   displays, not a stale value left behind by an earlier two-engine game;
 - the sound switch is stored as a boolean and read back as one: only a literal `true` or `false` is
   accepted, and anything else leaves the shipped default in place, because a stored `"on"` is not the
-  same fact as a switch that is on.
+  same fact as a switch that is on;
+- on a phone, the settings a phone does not offer are not read back as choices: a remembered 31×31
+  and a Master engine belong to a device that was offering those, so the phone draws 13×13 and takes
+  the middle of the two levels it has. It then stores what it is actually using — on that device the
+  entry says 13 — which is the same rule, not an exception: an entry describes the device that wrote
+  it, and a phone's entry is read by a phone. What a phone does offer — a difficulty within its two,
+  the board colour, the sound — is remembered like anything else, across a reload.
+  See [on a phone](#on-a-phone).
 
 Not kept, deliberately: the game in progress (a resumed position would ask the player to remember
 where they were, and the log that explains that position is not kept either), the mode, and the
@@ -397,6 +409,100 @@ exactly that directory. The claim is stated directly now — each recorded path 
 the site itself is in — which is both simpler to read and true for a domain-root stand-in, where that
 directory is empty.
 
+## On a phone
+
+A phone gets one game and four settings. Not a smaller version of the whole interface: one game —
+13×13, you against the CPU — and the only controls on its screen are the board colour, New game,
+the difficulty (Easy or Medium) and the pencil sound. The mode, the board size, which side you play,
+Undo, Hint, the position bar, the Engine report, the Decision log, the notes and the advanced
+settings are not drawn at all, and nothing switches them back on. They are taken away rather than
+greyed out on purpose: a greyed control promises that something will come back if you tap it, and
+none of these do.
+
+The engine is not part of the bargain. The same search, the same time limits, the same strength:
+a phone gets a smaller menu, not a weaker opponent. That is measured rather than asserted — the
+browser QA taps a phone's board once with a real touch, waits for the CPU to answer, and then reads
+the search depth and the list of candidates out of a card nobody is shown, so *hidden* cannot have
+come to mean *not running*. The two levels it does offer are built from the same table the desktop
+menu is built from, with their real clocks: Easy 0.1 s and up to 3 plies, Medium 0.5 s and up to 5.
+
+### How the page knows it is on a phone
+
+Two questions are asked of the browser once, at load, and neither of them is about the window:
+
+- `(hover: none) and (pointer: coarse)` — a screen you touch, with nothing hovering over it;
+- the shorter side of the **device screen** (`screen.width`, `screen.height`) is 720 CSS px or less.
+
+Both have to be true, or everything stays. The screen test alone would have called this project's own
+test browser a phone: headless Chrome here reports a screen of 800×600 while its window is 1424×945.
+The media query alone is not enough either, because it says nothing about how small the screen is.
+`ontouchstart` is not used at all — under Chrome's own touch emulation it stays false, so it is not a
+signal. Measured with that emulation, 393×852 at a device scale factor of 3 with five touch points:
+`hover:none`, `pointer:coarse`, the combined query true, and `screen` answering 393×852. Clearing the
+emulation gives back `hover:hover`, `pointer:fine` and the 800×600 screen, and the gate checks that
+at the end of its phone pass, so a phone branch cannot leak into a desktop.
+
+The threshold sits between real numbers: phones report 375, 393, 412 CSS px on the short edge, an
+iPad mini 744, an iPad 820 or 834. That line is a choice I made, and where it is wrong is stated: a
+large unfolded foldable may fall on the desktop side of it. If it does, it gets the whole interface
+and scrolls — the safe direction of a guess that went the wrong way, not a broken page.
+
+The decision is taken once, at load, and nothing in it depends on the window. Turning the phone
+sideways cannot change what is offered, and no CSS breakpoint is trusted with the choice. A browser
+too old to answer `matchMedia` is not a phone, and gets everything.
+
+### What a phone remembers
+
+The difficulty — within the two it is offered — the board colour and the sound switch are remembered
+like anything else, across a reload. The two settings a phone does not have are not read back as
+choices. Given an entry that says 31×31 and a Master engine, written by a desktop in the same browser
+profile, a phone draws 13×13 and takes Medium, the middle of its two levels. It then stores what it
+is actually using, which is the same rule as everywhere else: an entry describes the device that
+wrote it, and a phone's entry is read by a phone.
+
+Undo and Hint are gone, and so are their keys, `u` and `h`: a shortcut with no control beside it is a
+thing to forget rather than a thing to find. The Decision log and the position bar are hidden, but
+the game still keeps them — the log is written and the evaluation still moves the bar behind the
+scenes — so if they come back on another device the history is there.
+
+### The board had to learn to shrink
+
+Making a phone a 13×13 board showed a bug that was there for any narrow window, phone or not, and it
+was worth measuring before believing the fixed version. The page sizes the board from the width of
+the element holding it. That element is inside a card, and a card's minimum width is the minimum
+width of its content — and the canvas is content with a width of its own. At a 393 px window: the
+column was 342 px, the card 734, the canvas 708, the document 752, so the page scrolled sideways,
+and the board could not be made smaller because its own width was what was holding the space open.
+Narrowing the window to 360 moved the board from 708 to 695 — the window changed by 33 px and the
+board by 13.
+
+The fix is two lines, and both were checked by the same measurement: the cards inside the column are
+allowed to be narrower than their content (`min-width:0`), and the board's size is additionally
+never allowed past the document's own width. `node qa/narrow-fit.mjs` is the instrument that prints
+that chain at three window widths and then narrows the window once more without reloading, to see
+whether the page follows. After it: at a phone's 393 px the document is 393 px wide, nothing sticks
+out sideways, and the board is 318 CSS px holding 13 cells — 636 px of canvas at a scale factor of 2,
+and the same 13 cells the page says it is playing. At the same width without the phone signals the
+document is 378 px (the missing 15 is a scrollbar) and the board is 299 px across 26 grid lines and
+25 cells, which is what that window should still be given. Narrowing the window further now moves the
+board with it — 279 px on the phone page, 274 px at the same window without the phone signals. The few
+pixels between those are the grid being laid out in whole cells: a 13×13 keeps a 16 px margin where a
+25×25 keeps 12, and its cells round to 19 px against the other's 10.
+Before the change that same narrowing moved it 13 px. And at the 1440 px
+window the other gates run at, nothing moved at all — 826, 800, 760, the same numbers as
+before the change, which is the part of a layout fix that is easy to claim and easy to get wrong.
+
+### What this cannot show
+
+The phone pass runs on an emulated phone in a desktop browser. It uses the real media queries, a real
+393×852 layout, real touch events through the browser's input pipeline, and the real engine — but it
+is not a phone. What stays unmeasured here: how long a level's clock takes on a phone's silicon
+(the search behind the phone page reached its level's own ceiling — 5 plies at Medium, which is the
+most Medium is allowed — on this machine, and that says nothing about a 2019 mid-range handset),
+whether a thumb reaches the corners of that board, what it looks like on
+glass with sunlight on it, and anything at all about a browser other than this Chrome. Those need the
+device.
+
 ## Tests
 
 All plain Node (no packages, no test runner; developed on Node v24):
@@ -408,6 +514,14 @@ node tests/icon-check.mjs        # the shipped icon: the container, every frame 
 node tests/mp3-info.mjs          # what the five sound files are: codec, sample rate, duration counted in frames, peak and level
 node tests/first-move.mjs --games 100   # is the first move worth anything? same level both sides, N games each, with the interval
 ```
+
+One static check got this wrong for a whole round, and the page was fine: the gate that insists every
+`ui.<key>` the code touches is declared in the `ui` map reported `tagline` as undeclared, because a
+short explanatory comment sat between two entries of that map and the extractor's regular expression
+walked straight through the `*/` into the next line. A comment inside the data was the legitimate
+thing; the reader was blind to comments. It strips them before matching now, which keeps the check
+doing its job (the key really is missing if it is missing) without holding the source to a rule it
+never had.
 
 The suite covers: incremental scoring vs a brute-force rescan of every 5-window;
 tactical forcing per level; never missing a win or a block in self-play; the
@@ -607,7 +721,33 @@ levels from the URL hash and would hide what the page restored by itself. For th
 `qa/board-paper-winner.png` (a finished game, so the red five is in the frame) and
 `qa/board-remembered.png`.
 
-The marks are measured as pixels as well. `node qa/pen-ab.mjs` draws one position at several pen
+The phone profile is measured in the same script (`qa/ui-check.mjs`, its last pass). Chrome's own
+device emulation is asked for 393×852 at a scale factor of 3 with five touch points, which is what
+makes the page answer `hover:none / pointer:coarse` and report a 393×852 screen — the two facts its
+own test asks about. The pass then reads which parts of the page have boxes at all (a control whose
+row was taken away gets no boxes, so `display` on the control itself would have called it visible),
+what the difficulty menu offers and has selected, what the board measures in the bitmap rather than
+in the markup, that the line under the title describes the board that was drawn, and that nothing
+sticks out sideways. Then one real touch through the input pipeline, aimed at the centre cell by the
+grid it just measured: the page is asked what kind of pointer it felt (it must say `touch`), the move
+count must reach two because the CPU answered, and the depth and candidate count must be there in a
+card nobody is shown — the check that hiding the report did not quietly stop the search. Then the
+same page twice more: once after choosing Easy, to see the choice come back, and once with a stored
+entry from a desktop (31×31, Master), which must not reach the board or the menu. Then the narrow
+window *without* the phone signals, which is what an undetected phone gets: everything must still be
+there, at 25×25, with no sideways scroll. Then the emulation is cleared and the whole interface is
+expected back.
+
+The board measure is one instrument (`qa/board-geo.mjs`) rather than a copy per script, because an
+early copy of this pass reported a board of no cells and nothing about the reading said why. The
+shared one reports the colour it looked for, how far the board's own surface sits from it (in the
+slate palette: 33 levels), how many pixels sit near it at each tolerance, and which tolerance it
+chose, so a null reading arrives explained. It finds the grid lines by column, takes the median pitch
+and reports what number of cells that pitch divides the canvas into: on the phone page, 14 lines at a
+104 px pitch over a 1416 px canvas — 13 cells; at 760 px, 14 lines at 56 px — 13 cells. That is the
+number that says the game a phone is *told* it is playing is the one it is *given*.
+
+
 widths and reports what each produces: the line it draws in px at the cell size actually on screen, the
 mark's extent as a fraction of a cell, and how much of the square its colour covers — the numbers
 behind [How thick the pen is](#how-thick-the-pen-is). It stays a separate tool rather than a gate
@@ -643,6 +783,19 @@ is asked for and starts, the length Chrome reports is compared with the length c
 required to differ by the *same* offset for all five, a move plays exactly one clip, and nothing is
 logged to the console as an error. It needs the same Chrome as the other browser gates, and it runs
 against `index.html` rather than the copy in `qa/` because the clips are found by path.
+
+Those five clips are decoded from bytes this script reads out of `sounds/` and hands over, and that is
+a change from an earlier version which asked the page to fetch them. It was changed because of what a
+run showed: the page played twelve clips over twelve real clicks, every one resolved, while the gate's
+own probe reported `TypeError: Failed to fetch` for all five files and two checks failed. The page asks
+for its sound with `new Audio(url)`, which needs no `fetch`; a `fetch()` of a `file://` URL *from* a
+`file://` page is refused by this Chrome unless the browser was started with
+`--allow-file-access-from-files`, which the command above does not use. So the failure was the
+instrument asking the browser for a permission the product never needs, and the same two checks would
+have passed or failed depending on how Chrome happened to be launched. Carrying the bytes removes that
+dependency and says nothing new about the game — and the sizes printed on the way in (4,845 / 6,285 /
+6,285 / 6,765 / 5,325 bytes) are the repository's own files, which is the part that keeps the claim
+honest.
 
 ### What the pool was measured to do (the machine used for development: 16 logical cores)
 
